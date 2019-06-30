@@ -86,11 +86,11 @@ bridge:
     displayname_template: "{displayname} (Telegram)"
 
     # Set the preferred order of user identifiers which to use in the Matrix puppet display name.
-    # In the (hopefully unlikely) scenario that none of the given keys are found, the numeric user
+    # In the (hopefully impossible) scenario that none of the given keys are found, the numeric user
     # ID is used.
     #
-    # If the bridge is working properly, a phone number or an username should always be known, but
-    # the other one can very well be empty.
+    # Telegram requires displaynames, so a first name should always exist.
+    # Usernames might not exist.
     #
     # Valid keys:
     #   "full name"          (First and/or last name)
@@ -98,11 +98,17 @@ bridge:
     #   "first name"
     #   "last name"
     #   "username"
-    #   "phone number"
     displayname_preference:
     - full name
     - username
-    - phone number
+
+    # Rich profiles let you change the displayname template and preference per-room
+    # and also include telegram user metadata in the membership event that clients
+    # can use.
+    # Doing this requires sending membership events manually rather than using the
+    # simpler /profile/<user>/... endpoints, which might mean increased resource
+    # usage.
+    rich_profile: false
 
     # Maximum number of members to sync per portal when starting up. Other members will be
     # synced when they send messages. The maximum is 10000, after which the Telegram server

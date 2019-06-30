@@ -26,9 +26,9 @@ from telethon.tl.types import (UserProfilePhoto, User, UpdateUserName, PeerUser,
                                InputPeerPhotoFileLocation, UserProfilePhotoEmpty)
 from mautrix_appservice import AppService, IntentAPI, IntentError, MatrixRequestError
 
-from .types import MatrixUserID, TelegramID
-from .db import Puppet as DBPuppet
-from . import util
+from .types import MatrixUserID, MatrixRoomID, TelegramID
+from .db import Puppet as DBPuppet, PuppetPortal as DBPuppetPortal
+from . import util, portal as p
 
 if TYPE_CHECKING:
     from .matrix import MatrixHandler
@@ -56,10 +56,13 @@ class Puppet:
                  id: TelegramID,
                  access_token: Optional[str] = None,
                  custom_mxid: Optional[MatrixUserID] = None,
-                 username: Optional[str] = None,
                  displayname: Optional[str] = None,
                  displayname_source: Optional[TelegramID] = None,
+                 username: Optional[str] = None,
+                 first_name: Optional[str] = None,
+                 last_name: Optional[str] = None,
                  photo_id: Optional[str] = None,
+                 avatar_url: Optional[str] = None,
                  is_bot: bool = False,
                  is_registered: bool = False,
                  disable_updates: bool = False,
@@ -69,10 +72,13 @@ class Puppet:
         self.custom_mxid = custom_mxid  # type: Optional[MatrixUserID]
         self.default_mxid = self.get_mxid_from_id(self.id)  # type: MatrixUserID
 
-        self.username = username  # type: Optional[str]
         self.displayname = displayname  # type: Optional[str]
         self.displayname_source = displayname_source  # type: Optional[TelegramID]
+        self.username = username  # type: Optional[str]
+        self.first_name = first_name  # type: Optional[str]
+        self.last_name = last_name  # type: Optional[str]
         self.photo_id = photo_id  # type: Optional[str]
+        self.avatar_url = avatar_url  # type: Optional[str]
         self.is_bot = is_bot  # type: bool
         self.is_registered = is_registered  # type: bool
         self.disable_updates = disable_updates  # type: bool
@@ -285,22 +291,26 @@ class Puppet:
 
     def new_db_instance(self) -> DBPuppet:
         return DBPuppet(id=self.id, access_token=self.access_token, custom_mxid=self.custom_mxid,
-                        username=self.username, displayname=self.displayname,
-                        displayname_source=self.displayname_source, photo_id=self.photo_id,
-                        is_bot=self.is_bot, matrix_registered=self.is_registered,
-                        disable_updates=self.disable_updates)
+                        displayname=self.displayname, displayname_source=self.displayname_source,
+                        username=self.username, first_name=self.first_name,
+                        last_name=self.last_name, photo_id=self.photo_id,
+                        avatar_url=self.avatar_url, is_bot=self.is_bot,
+                        matrix_registered=self.is_registered, disable_updates=self.disable_updates)
 
     @classmethod
     def from_db(cls, db_puppet: DBPuppet) -> 'Puppet':
         return Puppet(db_puppet.id, db_puppet.access_token, db_puppet.custom_mxid,
-                      db_puppet.username, db_puppet.displayname, db_puppet.displayname_source,
-                      db_puppet.photo_id, db_puppet.is_bot, db_puppet.matrix_registered,
+                      db_puppet.displayname, db_puppet.displayname_source, db_puppet.username,
+                      db_puppet.first_name, db_puppet.last_name, db_puppet.photo_id,
+                      db_puppet.avatar_url, db_puppet.is_bot, db_puppet.matrix_registered,
                       db_puppet.disable_updates, db_instance=db_puppet)
 
     def save(self) -> None:
         self.db_instance.update(access_token=self.access_token, custom_mxid=self.custom_mxid,
-                                username=self.username, displayname=self.displayname,
-                                displayname_source=self.displayname_source, photo_id=self.photo_id,
+                                displayname=self.displayname,
+                                displayname_source=self.displayname_source, username=self.username,
+                                first_name=self.first_name, last_name=self.last_name,
+                                photo_id=self.photo_id, avatar_url=self.avatar_url,
                                 is_bot=self.is_bot, matrix_registered=self.is_registered,
                                 disable_updates=self.disable_updates)
 
@@ -316,18 +326,21 @@ class Puppet:
         return int(round(similarity * 100))
 
     @staticmethod
-    def get_displayname(info: User, enable_format: bool = True) -> str:
-        data = {
-            "phone number": info.phone if hasattr(info, "phone") else None,
+    def _get_displayname_data(info: User) -> Dict[str, str]:
+        return {
             "username": info.username,
             "full name": " ".join([info.first_name or "", info.last_name or ""]).strip(),
             "full name reversed": " ".join([info.first_name or "", info.last_name or ""]).strip(),
             "first name": info.first_name,
             "last name": info.last_name,
         }
-        preferences = config["bridge.displayname_preference"]
+
+    @classmethod
+    def get_displayname(cls, info: User, preferences: List[str] = None, template: str = None,
+                        data: Dict[str, str] = None) -> str:
+        data = data or cls._get_displayname_data(info)
         name = None
-        for preference in preferences:
+        for preference in preferences or config["bridge.displayname_preference"]:
             name = data[preference]
             if name:
                 break
@@ -337,24 +350,22 @@ class Puppet:
         elif not name:
             name = info.id
 
-        if not enable_format:
-            return name
-        return config["bridge.displayname_template"].format(
-            displayname=name)
+        return (template or config["bridge.displayname_template"]).format(displayname=name)
 
     async def update_info(self, source: 'AbstractUser', info: User) -> None:
         if self.disable_updates:
             return
         changed = False
-        if self.username != info.username:
-            self.username = info.username
-            changed = True
+
+        self.is_bot = info.bot
 
         changed = await self.update_displayname(source, info) or changed
         if isinstance(info.photo, UserProfilePhoto):
             changed = await self.update_avatar(source, info.photo) or changed
 
-        self.is_bot = info.bot
+        if self.username != info.username:
+            self.username = info.username
+            changed = True
 
         if changed:
             self.save()
@@ -372,21 +383,81 @@ class Puppet:
         elif isinstance(info, UpdateUserName):
             info = await source.client.get_entity(PeerUser(self.tgid))
 
-        displayname = self.get_displayname(info)
-        if displayname != self.displayname:
-            self.displayname = displayname
+        update = False
+        displayname = None
+        rich_profile = config["bridge.rich_profile"]
+        if not rich_profile:
+            displayname = self.get_displayname(info)
+            if self.displayname != displayname:
+                self.displayname = displayname
+                update = True
+        else:
+            if ((self.username != info.username or self.first_name != info.first_name
+                 or self.last_name != info.last_name)):
+                self.username = info.username
+                self.first_name = info.first_name
+                self.last_name = info.last_name
+                update = True
+        if update:
             self.displayname_source = source.tgid
             try:
-                await self.default_mxid_intent.set_display_name(displayname)
+                await self.update_profile(displayname=displayname, user=info)
             except MatrixRequestError:
                 self.log.exception("Failed to set displayname")
-                self.displayname = ""
-                self.displayname_source = None
             return True
         elif source.is_relaybot or self.displayname_source is None:
             self.displayname_source = source.tgid
             return True
         return False
+
+    async def update_profile_in_room(self, portal: p.Portal, user: Optional[User] = None) -> None:
+        pupo = DBPuppetPortal.get(self.tgid, portal.tgid)
+        await self._set_rich_profile(pupo, portal, user)
+
+    async def _set_rich_profile(self, pupo: Optional[DBPuppetPortal], portal: p.Portal,
+                                user: Optional[User] = None,
+                                dn_data: Optional[Dict[str, str]] = None) -> None:
+        local_displayname = portal.get_puppet_displayname(user or self, data=dn_data)
+        if not pupo:
+            pupo = DBPuppetPortal(self.tgid, portal.tgid, local_displayname)
+            pupo.insert()
+        elif local_displayname != pupo.displayname:
+            pupo.displayname = local_displayname
+            pupo.update()
+        else:
+            return
+        await self.default_mxid_intent.send_state_event(portal.mxid, "m.room.member", {
+            "displayname": local_displayname,
+            "avatar_url": self.avatar_url,
+            "net.maunium.telegram.puppet": {
+                "user_id": self.tgid,
+                "username": self.username,
+                "first_name": self.first_name,
+                "last_name": self.last_name,
+                "is_bot": self.is_bot
+            }
+        })
+
+    async def update_profile(self, displayname: Optional[str] = None, user: Optional[User] = None,
+                             avatar_url: Optional[str] = None) -> None:
+        if not config["bridge.rich_profile"]:
+            if displayname is not None:
+                await self.default_mxid_intent.set_display_name(displayname)
+            if avatar_url is not None:
+                await self.default_mxid_intent.set_avatar(avatar_url)
+            return
+        if avatar_url:
+            self.avatar_url = avatar_url
+        dn_data = self._get_displayname_data(user or self)
+        pupos = DBPuppetPortal.all_for_puppet(self.tgid)
+        for pupo in pupos:
+            portal = p.Portal.get_by_tgid(pupo.portal_id)
+            if not portal:
+                self.log.debug(f"Deleting PuppetPortal entry {pupo.puppet_id}-{pupo.portal_id}"
+                               " for portal that doesn't exist")
+                pupo.delete()
+                continue
+            await self._set_rich_profile(pupo, portal, user, dn_data)
 
     async def update_avatar(self, source: 'AbstractUser',
                             photo: Union[UserProfilePhoto, UserProfilePhotoEmpty]) -> bool:
@@ -401,7 +472,7 @@ class Puppet:
             if not photo_id:
                 self.photo_id = ""
                 try:
-                    await self.default_mxid_intent.set_avatar("")
+                    await self.update_profile(avatar_url="")
                 except MatrixRequestError:
                     self.log.exception("Failed to set avatar")
                     self.photo_id = ""
@@ -417,7 +488,7 @@ class Puppet:
             if file:
                 self.photo_id = photo_id
                 try:
-                    await self.default_mxid_intent.set_avatar(file.mxc)
+                    await self.update_profile(avatar_url=file.mxc)
                 except MatrixRequestError:
                     self.log.exception("Failed to set avatar")
                     self.photo_id = ""

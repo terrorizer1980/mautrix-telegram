@@ -18,7 +18,7 @@ from .base import Base
 from .bot_chat import BotChat
 from .message import Message
 from .portal import Portal
-from .puppet import Puppet
+from .puppet import Puppet, PuppetPortal
 from .room_state import RoomState
 from .telegram_file import TelegramFile
 from .user import User, UserPortal, Contact
@@ -26,8 +26,8 @@ from .user_profile import UserProfile
 
 
 def init(db_engine) -> None:
-    for table in (Portal, Message, User, Contact, UserPortal, Puppet, TelegramFile, UserProfile,
-                  RoomState, BotChat):
+    for table in (Portal, Message, User, Contact, UserPortal, Puppet, PuppetPortal, TelegramFile,
+                  UserProfile, RoomState, BotChat):
         table.db = db_engine
         table.t = table.__table__
         table.c = table.t.c

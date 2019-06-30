@@ -201,7 +201,14 @@ class Config(DictWithRecursion):
         copy("bridge.alias_template")
         copy("bridge.displayname_template")
 
-        copy("bridge.displayname_preference")
+        allowed_prefs = ("full name", "full name reversed", "first name", "last name", "username")
+        dn_prefs = list({pref: None  # Use dict to preserve order while removing duplicates
+                         for pref in self.get("bridge.displayname_preference", None) or []
+                         if pref in allowed_prefs})
+        if dn_prefs:
+            base["bridge.displayname_preference"] = dn_prefs
+
+        copy("bridge.rich_profile")
 
         copy("bridge.max_initial_member_sync")
         copy("bridge.sync_channel_members")

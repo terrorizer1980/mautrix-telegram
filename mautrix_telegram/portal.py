@@ -68,7 +68,8 @@ from mautrix_appservice import MatrixRequestError, IntentError, AppService, Inte
 
 from .types import MatrixEventID, MatrixRoomID, MatrixUserID, TelegramID
 from .context import Context
-from .db import Portal as DBPortal, Message as DBMessage, TelegramFile as DBTelegramFile
+from .db import (Portal as DBPortal, Message as DBMessage, TelegramFile as DBTelegramFile,
+                 PuppetPortal as DBPuppetPortal)
 from .util import ignore_coro, sane_mimetypes
 from . import puppet as p, user as u, formatter, util
 
@@ -304,6 +305,10 @@ class Portal:
     # endregion
     # region Matrix room info updating
 
+    async def get_puppet_displayname(self, info: User, data: Dict[str, str] = None) -> str:
+        return p.Puppet.get_displayname(info, self.get_config("displayname_preference"),
+                                        self.get_config("displayname_template"), data)
+
     async def invite_to_matrix(self, users: InviteList) -> None:
         if isinstance(users, str):
             await self.main_intent.invite(self.mxid, users, check_cache=True)
@@ -498,6 +503,7 @@ class Portal:
             allowed_tgids.add(entity.id)
             await puppet.intent.ensure_joined(self.mxid)
             await puppet.update_info(source, entity)
+            await puppet.update_profile_in_room(self, entity)
 
             user = u.User.get_by_tgid(TelegramID(entity.id))
             if user:
