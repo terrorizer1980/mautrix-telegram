@@ -363,17 +363,20 @@ class Puppet:
         if isinstance(info.photo, UserProfilePhoto):
             changed = await self.update_avatar(source, info.photo) or changed
 
-        if self.username != info.username:
-            self.username = info.username
-            changed = True
-
         if changed:
             self.save()
 
     async def update_displayname(self, source: 'AbstractUser', info: Union[User, UpdateUserName]
                                  ) -> bool:
+        update = False
+        if ((self.username != info.username or self.first_name != info.first_name
+             or self.last_name != info.last_name)):
+            self.username = info.username
+            self.first_name = info.first_name
+            self.last_name = info.last_name
+            update = True
         if self.disable_updates:
-            return False
+            return update
         is_main_source = (source.is_relaybot or (self.displayname_source is not None
                                                  and self.displayname_source == source.tgid))
         # No phone -> not in contact list -> can't set custom name -> name is trustworthy
@@ -383,21 +386,13 @@ class Puppet:
         elif isinstance(info, UpdateUserName):
             info = await source.client.get_entity(PeerUser(self.tgid))
 
-        update = False
         displayname = None
         rich_profile = config["bridge.rich_profile"]
         if not rich_profile:
             displayname = self.get_displayname(info)
-            if self.displayname != displayname:
+            update = self.displayname != displayname
+            if update:
                 self.displayname = displayname
-                update = True
-        else:
-            if ((self.username != info.username or self.first_name != info.first_name
-                 or self.last_name != info.last_name)):
-                self.username = info.username
-                self.first_name = info.first_name
-                self.last_name = info.last_name
-                update = True
         if update:
             self.displayname_source = source.tgid
             try:
@@ -410,11 +405,11 @@ class Puppet:
             return True
         return False
 
-    async def update_profile_in_room(self, portal: p.Portal, user: Optional[User] = None) -> None:
+    async def update_profile_in_room(self, portal: 'p.Portal', user: Optional[User] = None) -> None:
         pupo = DBPuppetPortal.get(self.tgid, portal.tgid)
         await self._set_rich_profile(pupo, portal, user)
 
-    async def _set_rich_profile(self, pupo: Optional[DBPuppetPortal], portal: p.Portal,
+    async def _set_rich_profile(self, pupo: Optional[DBPuppetPortal], portal: 'p.Portal',
                                 user: Optional[User] = None,
                                 dn_data: Optional[Dict[str, str]] = None) -> None:
         local_displayname = portal.get_puppet_displayname(user or self, data=dn_data)
@@ -446,7 +441,7 @@ class Puppet:
             if avatar_url is not None:
                 await self.default_mxid_intent.set_avatar(avatar_url)
             return
-        if avatar_url:
+        if avatar_url is not None:
             self.avatar_url = avatar_url
         dn_data = self._get_displayname_data(user or self)
         pupos = DBPuppetPortal.all_for_puppet(self.tgid)

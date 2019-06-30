@@ -305,7 +305,7 @@ class Portal:
     # endregion
     # region Matrix room info updating
 
-    async def get_puppet_displayname(self, info: User, data: Dict[str, str] = None) -> str:
+    def get_puppet_displayname(self, info: User, data: Dict[str, str] = None) -> str:
         return p.Puppet.get_displayname(info, self.get_config("displayname_preference"),
                                         self.get_config("displayname_template"), data)
 
