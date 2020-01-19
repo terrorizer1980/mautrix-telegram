@@ -84,6 +84,21 @@ manhole:
     whitelist:
     - 0
 
+# Scaling config.
+scaling:
+    # Currently the bridge implements a very primitive scaling system where you
+    # manually run the bridge N times and each bucket handles a subset of users
+    # and rooms based on the modulo of a hash.
+    # Set the total number of buckets here and start N instances of the bridge
+    # with `--bucket=X` for X = 0..N-1.
+    # buckets<=1 means scaling is disabled.
+    buckets: 1
+    # A mixing server for cross-process locks and other stuff.
+    # Run with `python -m mautrix_telegram.mixserv` and set the host and port here.
+    mixserv:
+        host: 127.0.0.1
+        port: 29323
+
 # Bridge config
 bridge:
     # Localpart template of MXIDs for Telegram users.

@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Dict, Set, Tuple, Union, Iterable, TYPE_CHECKING
+from typing import Dict, Set, Tuple, Union, Iterable, Callable, TYPE_CHECKING
 
 from mautrix.bridge import BaseMatrixHandler
 from mautrix.types import (Event, EventType, RoomID, UserID, EventID, ReceiptEvent, ReceiptType,
@@ -45,10 +45,12 @@ class MatrixHandler(BaseMatrixHandler):
     bot: 'Bot'
     commands: 'com.CommandProcessor'
     previously_typing: Dict[RoomID, Set[UserID]]
+    should_process_bucket: Callable[[Union[int, str]], bool]
 
     def __init__(self, context: 'Context') -> None:
         super(MatrixHandler, self).__init__(context.az, context.config, loop=context.loop,
                                             command_processor=com.CommandProcessor(context))
+        self.should_process_bucket = context.should_process_bucket
         self.bot = context.bot
         self.previously_typing = {}
 
@@ -263,9 +265,12 @@ class MatrixHandler(BaseMatrixHandler):
         sender = await u.User.get_by_mxid(sender_mxid).ensure_started()
         if await sender.has_full_access(allow_bot=True) and portal:
             handler, content_type, content_key = {
-                EventType.ROOM_NAME: (portal.handle_matrix_title, RoomNameStateEventContent, "name"),
-                EventType.ROOM_TOPIC: (portal.handle_matrix_about, RoomTopicStateEventContent, "topic"),
-                EventType.ROOM_AVATAR: (portal.handle_matrix_avatar, RoomAvatarStateEventContent, "url"),
+                EventType.ROOM_NAME: (
+                    portal.handle_matrix_title, RoomNameStateEventContent, "name"),
+                EventType.ROOM_TOPIC: (
+                    portal.handle_matrix_about, RoomTopicStateEventContent, "topic"),
+                EventType.ROOM_AVATAR: (
+                    portal.handle_matrix_avatar, RoomAvatarStateEventContent, "url"),
             }[evt_type]
             if not isinstance(content, content_type):
                 return
@@ -355,7 +360,8 @@ class MatrixHandler(BaseMatrixHandler):
         self.previously_typing[room_id] = now_typing
 
     def filter_matrix_event(self, evt: Event) -> bool:
-        if not isinstance(evt, (RedactionEvent, MessageEvent, StateEvent)):
+        if ((not isinstance(evt, (RedactionEvent, MessageEvent, StateEvent))
+             or not self.should_process_bucket(evt.room_id))):
             return True
         return evt.sender and (evt.sender == self.az.bot_mxid
                                or pu.Puppet.get_id_from_mxid(evt.sender) is not None)

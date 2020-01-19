@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Tuple, Optional, Union, Dict, Type, Any, TYPE_CHECKING
+from typing import Tuple, Optional, Union, Dict, Type, Any, Callable, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import asyncio
 import logging
@@ -72,6 +72,7 @@ class AbstractUser(ABC):
     az: AppService
     relaybot: Optional['Bot']
     ignore_incoming_bot_events: bool = True
+    should_process_bucket: Callable[[Union[int, str]], bool]
 
     client: Optional[MautrixTelegramClient]
     mxid: Optional[UserID]
@@ -87,6 +88,7 @@ class AbstractUser(ABC):
     relaybot_whitelisted: bool
     matrix_puppet_whitelisted: bool
     is_admin: bool
+    in_bucket: bool
 
     def __init__(self) -> None:
         self.is_admin = False
@@ -170,7 +172,10 @@ class AbstractUser(ABC):
             loop=self.loop,
             base_logger=base_logger
         )
-        self.client.add_event_handler(self._update_catch)
+        if self.in_bucket:
+            self.client.add_event_handler(self._update_catch)
+        else:
+            self.client.no_updates = True
 
     @abstractmethod
     async def update(self, update: TypeUpdate) -> bool:
@@ -448,4 +453,5 @@ def init(context: 'Context') -> None:
     AbstractUser.az, config, AbstractUser.loop, AbstractUser.relaybot = context.core
     AbstractUser.ignore_incoming_bot_events = config["bridge.relaybot.ignore_own_incoming_events"]
     AbstractUser.session_container = context.session_container
+    AbstractUser.should_process_bucket = context.should_process_bucket
     MAX_DELETIONS = config.get("bridge.max_telegram_delete", 10)

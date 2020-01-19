@@ -13,7 +13,8 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, Union, TYPE_CHECKING
+import hashlib
 import asyncio
 
 from alchemysession import AlchemySessionContainer
@@ -39,9 +40,12 @@ class Context:
     public_website: Optional['PublicBridgeWebsite']
     provisioning_api: Optional['ProvisioningAPI']
 
+    bucket_count: int
+    bucket: int
+
     def __init__(self, az: AppService, config: 'Config', loop: asyncio.AbstractEventLoop,
                  session_container: AlchemySessionContainer, bridge: 'TelegramBridge',
-                 bot: Optional['Bot']) -> None:
+                 bot: Optional['Bot'], bucket: int) -> None:
         self.az = az
         self.config = config
         self.loop = loop
@@ -51,7 +55,20 @@ class Context:
         self.session_container = session_container
         self.public_website = None
         self.provisioning_api = None
+        self.bucket_count = self.config["scaling.buckets"]
+        self.bucket = bucket
 
     @property
     def core(self) -> Tuple[AppService, 'Config', asyncio.AbstractEventLoop, Optional['Bot']]:
         return self.az, self.config, self.loop, self.bot
+
+    @property
+    def bucket_info(self) -> Tuple[int, int]:
+        return self.bucket_count, self.bucket
+
+    def should_process_bucket(self, val: Union[int, str]) -> bool:
+        if self.bucket_count <= 1:
+            return True
+        if isinstance(val, str):
+            val = int(hashlib.md5(val.encode("utf-8")).hexdigest(), 16)
+        return val % self.bucket_count == self.bucket

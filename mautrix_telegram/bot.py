@@ -68,6 +68,7 @@ class Bot(AbstractUser):
                                        or False)
         self._me_info = None
         self._me_mxid = None
+        self.in_bucket = self.should_process_bucket("bot")
 
     async def get_me(self, use_cache: bool = True) -> Tuple[User, UserID]:
         if not use_cache or not self._me_mxid:

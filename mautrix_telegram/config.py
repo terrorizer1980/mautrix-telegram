@@ -90,6 +90,8 @@ class Config(BaseBridgeConfig):
         copy("manhole.path")
         copy("manhole.whitelist")
 
+        copy("scaling.buckets")
+
         copy("bridge.username_template")
         copy("bridge.alias_template")
         copy("bridge.displayname_template")

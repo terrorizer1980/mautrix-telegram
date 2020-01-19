@@ -45,7 +45,7 @@ except ImportError:
 
 class TelegramBridge(Bridge):
     name = "mautrix-telegram"
-    command = "python -m mautrix-telegram"
+    command = "python -m mautrix_telegram"
     description = "A Matrix-Telegram puppeting bridge."
     repo_url = "https://github.com/tulir/mautrix-telegram"
     real_user_content_key = "net.maunium.telegram.puppet"
@@ -59,6 +59,11 @@ class TelegramBridge(Bridge):
     session_container: AlchemySessionContainer
     bot: Bot
     manhole: Optional[ManholeState]
+
+    def prepare_arg_parser(self) -> None:
+        super().prepare_arg_parser()
+        self.parser.add_argument("-u", "--bucket", type=int, default=0, metavar="<index>",
+                                 help="The index of this bucket (see scaling in config)")
 
     def prepare_db(self) -> None:
         super().prepare_db()
@@ -88,7 +93,8 @@ class TelegramBridge(Bridge):
 
     def prepare_bridge(self) -> None:
         self.bot = init_bot(self.config)
-        context = Context(self.az, self.config, self.loop, self.session_container, self, self.bot)
+        context = Context(self.az, self.config, self.loop, self.session_container, self, self.bot,
+                          self.args.bucket)
         self._prepare_website(context)
         self.matrix = context.mx = MatrixHandler(context)
         self.manhole = None

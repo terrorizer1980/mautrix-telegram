@@ -92,6 +92,7 @@ class User(AbstractUser, BaseUser):
             self.by_tgid[tgid] = self
 
         self.log = self.log.getChild(self.mxid)
+        self.in_bucket = self.should_process_bucket(self.mxid)
 
     @property
     def name(self) -> str:
