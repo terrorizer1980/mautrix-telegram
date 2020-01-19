@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Tuple
+from typing import Tuple, Union
 from enum import IntEnum
 import asyncio
 import struct
@@ -21,15 +21,20 @@ import struct
 
 class Command(IntEnum):
     UNKNOWN = 0
-    QUIT = 1
-    LOCK = 2
-    UNLOCK = 3
-    CACHE_UPDATE = 4
+    CONNECT = 1
+    QUIT = 2
+    LOCK = 3
+    OPTIONAL_LOCK = 4
+    UNLOCK = 5
+    CACHE_UPDATE = 6
 
 
 class Response(IntEnum):
-    LOCKED = 1
+    CONNECT_OK = 1
     ERROR = 2
+    LOCKED = 3
+    LOCK_NOT_FOUND = 4
+    UNLOCKED = 5
 
 
 # Header: request ID (int32), command/response code (int8), payload length (int32)
@@ -37,14 +42,14 @@ proto_header = "!IBI"
 proto_header_len = 9
 
 
-async def write_response(writer: asyncio.StreamWriter, req_id: int, resp: Response,
-                         payload: bytes) -> None:
+async def write(writer: asyncio.StreamWriter, req_id: int, resp: Union[Response, Command],
+                         payload: bytes = b"") -> None:
     writer.write(struct.pack(proto_header, req_id, resp, len(payload)))
     writer.write(payload)
     await writer.drain()
 
 
-async def read_command(reader: asyncio.StreamReader) -> Tuple[int, Command, bytes]:
+async def read(reader: asyncio.StreamReader) -> Tuple[int, Union[Command, Response], bytes]:
     req_id, cmd, length = struct.unpack(proto_header, await reader.readexactly(7))
     payload = await reader.readexactly(length)
     try:

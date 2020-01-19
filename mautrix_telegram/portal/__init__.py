@@ -3,6 +3,7 @@ from .matrix import PortalMatrix, init as init_matrix
 from .metadata import PortalMetadata, init as init_metadata
 from .telegram import PortalTelegram, init as init_telegram
 from .deduplication import init as init_dedup
+from .send_lock import init as init_send_lock
 from ..context import Context
 
 
@@ -16,6 +17,7 @@ def init(context: Context) -> None:
     init_metadata(context)
     init_telegram(context)
     init_matrix(context)
+    init_send_lock(context)
 
 
 __all__ = ["Portal", "init"]

@@ -35,6 +35,7 @@ from .portal import init as init_portal
 from .puppet import Puppet, init as init_puppet
 from .sqlstatestore import SQLStateStore
 from .user import User, init as init_user
+from .mix.client import MixClient
 from .version import version, linkified_version
 
 try:
@@ -58,6 +59,7 @@ class TelegramBridge(Bridge):
     config: Config
     session_container: AlchemySessionContainer
     bot: Bot
+    mix: Optional[MixClient]
     manhole: Optional[ManholeState]
 
     def prepare_arg_parser(self) -> None:
@@ -91,10 +93,21 @@ class TelegramBridge(Bridge):
                 self.log.warning("Metrics are enabled in the config, "
                                  "but prometheus_client is not installed.")
 
+    def prepare_scaling(self) -> Optional[MixClient]:
+        if not self.config["scaling.buckets"]:
+            return None
+        conn_id = f"bucket{self.args.bucket}"
+        proto = self.config["scaling.mix.proto"]
+        host = self.config["scaling.mix.host"]
+        port = self.config["scaling.mix.port"]
+        return MixClient(host=host, port=port, unix=proto == "unix", conn_id=conn_id,
+                         loop=self.loop)
+
     def prepare_bridge(self) -> None:
         self.bot = init_bot(self.config)
+        self.mix = self.prepare_scaling()
         context = Context(self.az, self.config, self.loop, self.session_container, self, self.bot,
-                          self.args.bucket)
+                          self.args.bucket, self.mix)
         self._prepare_website(context)
         self.matrix = context.mx = MatrixHandler(context)
         self.manhole = None
@@ -106,6 +119,12 @@ class TelegramBridge(Bridge):
         user_startup = init_user(context)
         bot_startup = [self.bot.start()] if self.bot else []
         self.startup_actions = chain(puppet_startup, user_startup, bot_startup)
+
+    async def start(self) -> None:
+        if self.mix:
+            await self.mix.connect()
+            self.mix.listen()
+        await super().start()
 
     def prepare_stop(self) -> None:
         for puppet in Puppet.by_custom_mxid.values():

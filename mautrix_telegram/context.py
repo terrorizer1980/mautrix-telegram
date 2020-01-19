@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from .config import Config
     from .bot import Bot
     from .matrix import MatrixHandler
+    from .mix.client import MixClient
     from .__main__ import TelegramBridge
 
 
@@ -40,12 +41,13 @@ class Context:
     public_website: Optional['PublicBridgeWebsite']
     provisioning_api: Optional['ProvisioningAPI']
 
+    mix: Optional['MixClient']
     bucket_count: int
     bucket: int
 
     def __init__(self, az: AppService, config: 'Config', loop: asyncio.AbstractEventLoop,
                  session_container: AlchemySessionContainer, bridge: 'TelegramBridge',
-                 bot: Optional['Bot'], bucket: int) -> None:
+                 bot: Optional['Bot'], bucket: int, mix: Optional['MixClient']) -> None:
         self.az = az
         self.config = config
         self.loop = loop
@@ -57,6 +59,7 @@ class Context:
         self.provisioning_api = None
         self.bucket_count = self.config["scaling.buckets"]
         self.bucket = bucket
+        self.mix = mix
 
     @property
     def core(self) -> Tuple[AppService, 'Config', asyncio.AbstractEventLoop, Optional['Bot']]:

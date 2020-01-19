@@ -13,10 +13,12 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Dict
+from typing import Dict, Union
 from asyncio import Lock
+import struct
 
 from ..types import TelegramID
+from ..mix.client import MixClient, MixLock
 
 
 class FakeLock:
@@ -27,18 +29,35 @@ class FakeLock:
         pass
 
 
-class PortalSendLock:
+noop_lock = FakeLock()
+
+
+class LocalSendLock:
     _send_locks: Dict[int, Lock]
-    _noop_lock: Lock = FakeLock()
 
     def __init__(self) -> None:
         self._send_locks = {}
 
-    def __call__(self, user_id: TelegramID, required: bool = True) -> Lock:
+    def __call__(self, user_id: TelegramID, required: bool = True) -> Union[FakeLock, Lock]:
         if user_id is None and required:
             raise ValueError("Required send lock for none id")
         try:
             return self._send_locks[user_id]
         except KeyError:
             return (self._send_locks.setdefault(user_id, Lock())
-                    if required else self._noop_lock)
+                    if required else noop_lock)
+
+
+class MixSendLock:
+    _mix: MixClient
+
+    def __init__(self, mix: MixClient) -> None:
+        self._mix = mix
+
+    def __call__(self, user_id: TelegramID, required: bool = True) -> Union[MixLock, FakeLock]:
+        if user_id is None:
+            if required:
+                raise ValueError("Required send lock for none id")
+            else:
+                return noop_lock
+        return MixLock(self._mix, key=b"psl" + struct.pack("!I", user_id), required=required)

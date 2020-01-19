@@ -36,9 +36,10 @@ from mautrix.util.simple_template import SimpleTemplate
 from ..types import TelegramID
 from ..context import Context
 from ..db import Portal as DBPortal
+from ..mix.client import MixClient
 from .. import puppet as p, user as u, util
 from .deduplication import PortalDedup
-from .send_lock import PortalSendLock
+from .send_lock import LocalSendLock, MixSendLock
 
 if TYPE_CHECKING:
     from ..bot import Bot
@@ -58,6 +59,7 @@ class BasePortal(ABC):
     az: AppService = None
     bot: 'Bot' = None
     loop: asyncio.AbstractEventLoop = None
+    mix: MixClient
 
     # Config cache
     filter_mode: str = None
@@ -91,7 +93,7 @@ class BasePortal(ABC):
     alias: Optional[RoomAlias]
 
     dedup: PortalDedup
-    send_lock: PortalSendLock
+    send_lock: Union[LocalSendLock, MixSendLock]
 
     _db_instance: DBPortal
     _main_intent: Optional[IntentAPI]
@@ -117,7 +119,10 @@ class BasePortal(ABC):
         self.log = self.base_log.getChild(self.tgid_log if self.tgid else self.mxid)
 
         self.dedup = PortalDedup(self)
-        self.send_lock = PortalSendLock()
+        if self.mix:
+            self.send_lock = MixSendLock(self.mix)
+        else:
+            self.send_lock = LocalSendLock()
 
         if tgid:
             self.by_tgid[self.tgid_full] = self
@@ -506,3 +511,4 @@ def init(context: Context) -> None:
     BasePortal.hs_domain = config["homeserver.domain"]
     BasePortal.alias_template = SimpleTemplate(config["bridge.alias_template"], "groupname",
                                                prefix="#", suffix=f":{BasePortal.hs_domain}")
+    BasePortal.mix = context.mix
