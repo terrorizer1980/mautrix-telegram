@@ -91,9 +91,8 @@ class Config(BaseBridgeConfig):
         copy("manhole.whitelist")
 
         copy("scaling.buckets")
-        copy("scaling.mix.proto")
-        copy("scaling.mix.host")
-        copy("scaling.mix.port")
+        copy("scaling.config_override")
+        copy("scaling.mix")
 
         copy("bridge.username_template")
         copy("bridge.alias_template")

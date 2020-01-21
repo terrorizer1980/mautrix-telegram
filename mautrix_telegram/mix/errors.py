@@ -13,29 +13,24 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Dict, Callable, Awaitable, Tuple, Union
+from typing import Tuple
 
-from ..protocol import Response, Command
-
-HandlerReturn = Union[Tuple[Response, bytes], Response]
-Handler = Callable[[bytes], Awaitable[HandlerReturn]]
-
-commands: Dict[Command, Handler] = {}
+from .protocol import Response
 
 
-def register_handler(cmd: Command) -> Callable[[Handler], Handler]:
-    def wrapper(fn: Handler) -> Handler:
-        commands[cmd] = fn
-        return fn
-
-    return wrapper
-
-
-@register_handler(Command.UNKNOWN)
-async def unknown_command(_: bytes) -> HandlerReturn:
-    return Response.ERROR, b"unknown command"
+class MixError(Exception):
+    def __init__(self, message: str, response: Response, payload: bytes) -> None:
+        super().__init__(message)
+        self.response = response
+        self.payload = payload
 
 
-@register_handler(Command.CONNECT)
-async def already_connected(_: bytes) -> HandlerReturn:
-    return Response.ERROR, b"received duplicate connect command"
+class UnexpectedResponse(MixError):
+    def __init__(self, response: Response, payload: bytes, expected: Tuple[Response, ...]) -> None:
+        super().__init__(f"Unexpected response: {response.name}", response, payload)
+        self.expected = expected
+
+
+class ErrorResponse(MixError):
+    def __init__(self, payload: bytes) -> None:
+        super().__init__(f"Error response: {payload.decode('utf-8')}", Response.ERROR, payload)

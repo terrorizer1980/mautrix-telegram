@@ -90,18 +90,19 @@ scaling:
     # manually run the bridge N times and each bucket handles a subset of users
     # and rooms based on the modulo of a hash.
     # Set the total number of buckets here and start N instances of the bridge
-    # with `--bucket=X` for X = 0..N-1.
+    # with `--bucket=X` for X = 1..N.
     # buckets<=1 means scaling is disabled.
     buckets: 1
+    # This section can be used to override specific config keys for individual buckets.
+    config_override:
+        1:
+            appservice.port: 29400
+        2:
+            appservice.port: 29401
     # A mixing server for cross-process locks and other stuff.
-    # Run with `python -m mautrix_telegram.mix.server` and set the host and port here.
-    mix:
-        # Protocol to use. Either `tcp` or `unix`.
-        proto: tcp
-        # Hostname, IP address or Unix socket path to connect to.
-        host: 127.0.0.1
-        # Port to connect to. Ignored when using Unix socket.
-        port: 29323
+    # Run with `python -m mautrix_telegram.mix.server` and set the address here.
+    # E.g. tcp://host:port or unix:///tmp/mautrix-telegram-mix.sock
+    mix: tcp://127.0.0.1:29323
 
 # Bridge config
 bridge:

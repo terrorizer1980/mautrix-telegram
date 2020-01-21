@@ -1,2 +1,2 @@
-from .client import MixClient, MixError
+from .client import MixClient
 from .lock import MixLock

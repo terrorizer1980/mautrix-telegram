@@ -31,6 +31,7 @@ from mautrix.types import UserID
 from .abstract_user import AbstractUser
 from .db import BotChat
 from .types import TelegramID
+from .context import Context
 from . import puppet as pu, portal as po, user as u
 
 if TYPE_CHECKING:
@@ -51,7 +52,7 @@ class Bot(AbstractUser):
     _me_info: Optional[User]
     _me_mxid: Optional[UserID]
 
-    def __init__(self, token: str) -> None:
+    def __init__(self, token: str, in_bucket: bool) -> None:
         super().__init__()
         self.token = token
         self.tgid = None
@@ -68,7 +69,7 @@ class Bot(AbstractUser):
                                        or False)
         self._me_info = None
         self._me_mxid = None
-        self.in_bucket = self.should_process_bucket("bot")
+        self.in_bucket = in_bucket
 
     async def get_me(self, use_cache: bool = True) -> Tuple[User, UserID]:
         if not use_cache or not self._me_mxid:
@@ -302,10 +303,10 @@ class Bot(AbstractUser):
         return "bot"
 
 
-def init(cfg: 'Config') -> Optional[Bot]:
+def init(context: Context) -> Optional[Bot]:
     global config
-    config = cfg
+    config = context.config
     token = config["telegram.bot_token"]
     if token and not token.lower().startswith("disable"):
-        return Bot(token)
+        return Bot(token, in_bucket=context.should_process_bucket("bot"))
     return None

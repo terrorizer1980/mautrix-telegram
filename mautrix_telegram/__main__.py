@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Optional
 from itertools import chain
+import sys
 
 from alchemysession import AlchemySessionContainer
 
@@ -36,6 +37,7 @@ from .puppet import Puppet, init as init_puppet
 from .sqlstatestore import SQLStateStore
 from .user import User, init as init_user
 from .mix.client import MixClient
+from .mix import register_handler as register_mix_handler, Command, Response, HandlerReturn
 from .version import version, linkified_version
 
 try:
@@ -94,27 +96,31 @@ class TelegramBridge(Bridge):
                                  "but prometheus_client is not installed.")
 
     def prepare_scaling(self) -> Optional[MixClient]:
-        if not self.config["scaling.buckets"]:
+        if self.config["scaling.buckets"] <= 1:
             return None
-        conn_id = f"bucket{self.args.bucket}"
-        proto = self.config["scaling.mix.proto"]
-        host = self.config["scaling.mix.host"]
-        port = self.config["scaling.mix.port"]
-        return MixClient(host=host, port=port, unix=proto == "unix", conn_id=conn_id,
-                         loop=self.loop)
+        if not self.args.bucket:
+            self.log.fatal("Config has scaling.buckets set to >1, but --bucket was not specified.")
+            sys.exit(20)
+        for k, v in self.config[f"scaling.config_override"].get(self.args.bucket, {}).items():
+            self.config[k] = v
+            # TODO remove debug print
+            print(f"{k} -> {self.config[k]}")
+        conn_id = f"bucket{self.args.bucket - 1}"
+        return MixClient(address=self.config["scaling.mix"], conn_id=conn_id,
+                         http_address=self.config["appservice.address"], loop=self.loop)
 
     def prepare_bridge(self) -> None:
-        self.bot = init_bot(self.config)
         self.mix = self.prepare_scaling()
-        context = Context(self.az, self.config, self.loop, self.session_container, self, self.bot,
-                          self.args.bucket, self.mix)
+        context = Context(self.az, self.config, self.loop, self.session_container, self,
+                          self.args.bucket - 1, self.mix)
+        self.bot = context.bot = init_bot(context)
+        init_abstract_user(context)
+        init_formatter(context)
+        init_portal(context)
         self._prepare_website(context)
         self.matrix = context.mx = MatrixHandler(context)
         self.manhole = None
 
-        init_abstract_user(context)
-        init_formatter(context)
-        init_portal(context)
         puppet_startup = init_puppet(context)
         user_startup = init_user(context)
         bot_startup = [self.bot.start()] if self.bot else []
@@ -133,6 +139,17 @@ class TelegramBridge(Bridge):
         if self.manhole:
             self.manhole.close()
             self.manhole = None
+        if self.mix:
+            self.mix.stop_listen()
 
 
-TelegramBridge().run()
+bridge = TelegramBridge()
+
+
+@register_mix_handler(Command.QUIT)
+async def mix_quit(_: bytes) -> HandlerReturn:
+    bridge.manual_stop()
+    return Response.ERROR, b"not stopped"
+
+
+bridge.run()

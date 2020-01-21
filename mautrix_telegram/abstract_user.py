@@ -234,8 +234,9 @@ class AbstractUser(ABC):
         return self
 
     async def stop(self) -> None:
-        await self.client.disconnect()
-        self.client = None
+        if self.client:
+            await self.client.disconnect()
+            self.client = None
 
     # region Telegram update handling
 

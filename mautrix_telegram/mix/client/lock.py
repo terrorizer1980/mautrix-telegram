@@ -13,21 +13,17 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import TYPE_CHECKING
-
 from ..protocol import Command, Response
-
-if TYPE_CHECKING:
-    from .client import MixClient
+from .client import MixClient
 
 
 class MixLock:
-    client: 'MixClient'
+    client: MixClient
     key: bytes
     required: bool
     locked: bool
 
-    def __init__(self, client: 'MixClient', key: bytes, required: bool = True) -> None:
+    def __init__(self, client: MixClient, key: bytes, required: bool = True) -> None:
         self.client = client
         self.key = key
         self.required = required

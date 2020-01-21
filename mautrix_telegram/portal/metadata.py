@@ -16,6 +16,7 @@
 from typing import List, Optional, Tuple, Union, Callable, TYPE_CHECKING
 from abc import ABC
 import asyncio
+import struct
 
 from telethon.tl.functions.messages import (AddChatUserRequest, CreateChatRequest,
                                             GetFullChatRequest, MigrateChatRequest)
@@ -35,6 +36,7 @@ from mautrix.appservice import IntentAPI
 
 from ..types import TelegramID
 from ..context import Context
+from ..mix.client import MixLock
 from .. import puppet as p, user as u, util
 from .base import BasePortal, InviteList, TypeParticipant, TypeChatPhoto
 
@@ -50,7 +52,8 @@ class PortalMetadata(BasePortal, ABC):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._room_create_lock = asyncio.Lock()
+        self._room_create_lock = (MixLock(self.mix, b"rcl" + struct.pack("!I", self.tgid))
+                                  if self.mix else asyncio.Lock())
 
     # region Matrix -> Telegram
 

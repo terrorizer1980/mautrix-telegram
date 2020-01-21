@@ -47,12 +47,12 @@ class Context:
 
     def __init__(self, az: AppService, config: 'Config', loop: asyncio.AbstractEventLoop,
                  session_container: AlchemySessionContainer, bridge: 'TelegramBridge',
-                 bot: Optional['Bot'], bucket: int, mix: Optional['MixClient']) -> None:
+                 bucket: int, mix: Optional['MixClient']) -> None:
         self.az = az
         self.config = config
         self.loop = loop
         self.bridge = bridge
-        self.bot = bot
+        self.bot = None
         self.mx = None
         self.session_container = session_container
         self.public_website = None

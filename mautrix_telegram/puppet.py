@@ -430,4 +430,5 @@ def init(context: 'Context') -> Iterable[Awaitable[Any]]:
     Puppet.login_shared_secret = secret.encode("utf-8") if secret else None
     Puppet.login_device_name = "Telegram Bridge"
 
-    return (puppet.try_start() for puppet in Puppet.all_with_custom_mxid())
+    return (puppet.try_start() for puppet in Puppet.all_with_custom_mxid()
+            if context.should_process_bucket(puppet.custom_mxid))

@@ -26,34 +26,46 @@ class Command(IntEnum):
     LOCK = 3
     OPTIONAL_LOCK = 4
     UNLOCK = 5
-    CACHE_UPDATE = 6
+    BROADCAST_CACHE_UPDATE = 6
+    UPDATE_CACHE = 7
 
 
 class Response(IntEnum):
-    CONNECT_OK = 1
-    ERROR = 2
-    LOCKED = 3
-    LOCK_NOT_FOUND = 4
-    UNLOCKED = 5
+    UNKNOWN = -1
+    CONNECT_OK = -2
+    ERROR = -3
+    LOCKED = -4
+    LOCK_NOT_FOUND = -5
+    UNLOCKED = -6
 
 
-# Header: request ID (int32), command/response code (int8), payload length (int32)
-proto_header = "!IBI"
-proto_header_len = 9
+# Header: request ID (int32), action code (int8), payload length (uint32)
+_header = "!ibI"
+_header_len = struct.calcsize(_header)
 
 
-async def write(writer: asyncio.StreamWriter, req_id: int, resp: Union[Response, Command],
-                         payload: bytes = b"") -> None:
-    writer.write(struct.pack(proto_header, req_id, resp, len(payload)))
+async def write(writer: asyncio.StreamWriter, req_id: int, action: Union[Response, Command],
+                payload: bytes = b"") -> None:
+    # TODO remove debug print
+    print("-->", req_id, action.name, payload)
+    writer.write(struct.pack(_header, req_id, action, len(payload)))
     writer.write(payload)
     await writer.drain()
 
 
 async def read(reader: asyncio.StreamReader) -> Tuple[int, Union[Command, Response], bytes]:
-    req_id, cmd, length = struct.unpack(proto_header, await reader.readexactly(7))
+    req_id, action, length = struct.unpack(_header, await reader.readexactly(_header_len))
     payload = await reader.readexactly(length)
-    try:
-        cmd = Command(cmd)
-    except ValueError:
-        cmd = Command.UNKNOWN
-    return req_id, cmd, payload
+    if action < 0:
+        try:
+            action = Response(action)
+        except ValueError:
+            action = Response.UNKNOWN
+    else:
+        try:
+            action = Command(action)
+        except ValueError:
+            action = Command.UNKNOWN
+    # TODO remove debug print
+    print("<--", req_id, action.name, payload)
+    return req_id, action, payload

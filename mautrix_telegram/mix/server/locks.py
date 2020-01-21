@@ -17,7 +17,7 @@ from typing import Dict
 import asyncio
 
 from ..protocol import Command, Response
-from .handlers import register_handler, HandlerReturn
+from ..handlers import register_handler, HandlerReturn
 
 locks: Dict[bytes, asyncio.Lock] = {}
 
@@ -32,7 +32,7 @@ async def on_lock(payload: bytes) -> HandlerReturn:
     return Response.LOCKED
 
 
-@register_handler(Command.LOCK)
+@register_handler(Command.OPTIONAL_LOCK)
 async def on_optional_lock(payload: bytes) -> HandlerReturn:
     try:
         await locks[payload].acquire()
@@ -43,5 +43,5 @@ async def on_optional_lock(payload: bytes) -> HandlerReturn:
 
 @register_handler(Command.UNLOCK)
 async def on_unlock(payload: bytes) -> HandlerReturn:
-    await locks[payload].release()
+    locks[payload].release()
     return Response.UNLOCKED

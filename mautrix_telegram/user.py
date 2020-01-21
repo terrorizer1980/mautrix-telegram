@@ -201,6 +201,14 @@ class User(AbstractUser, BaseUser):
         return self
 
     async def post_login(self, info: TLUser = None, first_login: bool = False) -> None:
+        if not self.in_bucket:
+            self.log.debug("Skipping post-login sync: not in bucket")
+            # TODO this should really be stored in the db
+            info = info or await self.client.get_me()
+            if self.is_bot != info.bot:
+                self.is_bot = info.bot
+            return
+
         try:
             await self.update_info(info)
         except Exception:
@@ -459,5 +467,6 @@ def init(context: 'Context') -> Iterable[Awaitable['User']]:
     global config
     config = context.config
 
-    return (User.from_db(db_user).try_ensure_started()
-            for db_user in DBUser.all_with_tgid())
+    return (user.ensure_started()
+            for user in (User.from_db(db_user) for db_user in DBUser.all_with_tgid())
+            if user.in_bucket)

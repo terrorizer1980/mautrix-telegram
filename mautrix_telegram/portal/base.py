@@ -278,8 +278,8 @@ class BasePortal(ABC):
                 authenticated.append(user)
         return authenticated
 
-    @staticmethod
-    async def cleanup_room(intent: IntentAPI, room_id: RoomID, message: str,
+    @classmethod
+    async def cleanup_room(cls, intent: IntentAPI, room_id: RoomID, message: str,
                            puppets_only: bool = False) -> None:
         try:
             members = await intent.get_room_members(room_id)
@@ -298,7 +298,8 @@ class BasePortal(ABC):
         try:
             await intent.leave_room(room_id)
         except (MatrixRequestError, IntentError):
-            self.log.warning("Failed to leave room when cleaning up room", exc_info=True)
+            cls.base_log.warning(f"Failed to leave room {room_id} when cleaning up room",
+                                 exc_info=True)
 
     async def cleanup_portal(self, message: str, puppets_only: bool = False) -> None:
         if self.username:
