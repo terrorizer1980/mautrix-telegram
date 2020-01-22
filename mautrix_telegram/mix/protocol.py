@@ -40,6 +40,7 @@ class Response(IntEnum):
     LOCK_NOT_FOUND = -5
     UNLOCKED = -6
     BROADCAST_RESPONSES = -7
+    TELEGRAM_RPC_OK = -8
 
 
 # Header: request ID (int32), action code (int8), payload length (uint32)
