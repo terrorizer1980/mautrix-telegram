@@ -13,18 +13,17 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Dict
 import logging.config
 import argparse
 import asyncio
 import sys
 
 from ruamel.yaml import YAML
-from yarl import URL
 
-from ..protocol import Command, Response, write, read
+from ..protocol import Command, Response
 from ..handlers import ConnectionHandler, register_handler, HandlerReturn
-from . import locks
+from .conns import conn_manager
+from . import locks, txn_mux
 
 parser = argparse.ArgumentParser(description="Mixing server for multiprocess mautrix-telegram.",
                                  prog="python -m mautrix_telegram.mix.server")
@@ -38,105 +37,34 @@ parser.add_argument("-l", "--log-config", type=str, default="", metavar="<path>"
                     help="Path to a YAML-formatted Python log config")
 args = parser.parse_args()
 
-if args.log_config:
-    with open(args.log_config, "r") as file:
-        logging.config.dictConfig(YAML().load(file))
-log = logging.getLogger("mau.mix")
-
 
 @register_handler(Command.CONNECT)
-async def already_connected(_: bytes) -> HandlerReturn:
+async def already_connected(_1: ConnectionHandler, _2: bytes) -> HandlerReturn:
     return Response.ERROR, b"received duplicate connect command"
 
 
-conns: Dict[str, ConnectionHandler] = {}
-
-
-async def handle_conn(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    try:
-        req_id, cmd, payload = await read(reader)
-    except asyncio.IncompleteReadError:
-        writer.close()
-        return
-    if cmd != Command.CONNECT:
-        await write(writer, req_id, Response.ERROR, b"expected connect command")
-        writer.close()
-        return
-    conn_id, http_address = payload.decode("utf-8").split(";")
-    conn_log = log.getChild(conn_id)
-    if conn_id in conns:
-        conn_log.warning("Existing connection found, stopping...")
-        conns[conn_id].stop()
-    handler = ConnectionHandler(reader, writer, is_server=True, log=conn_log, loop=loop)
-    handler.http_address = URL(http_address)
-    conns[conn_id] = handler
-    await write(writer, req_id, Response.CONNECT_OK, b"foo")
-    conn_log.info(f"{conn_id} connected from {handler.ip}")
-    await handler.run()
-    try:
-        if conns[conn_id] == handler:
-            del conns[conn_id]
-    except KeyError:
-        pass
-    conn_log.info(f"{conn_id} disconnected")
-
-
-async def try_handle_conn(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    try:
-        await handle_conn(reader, writer)
-    except Exception:
-        sock = writer.transport.get_extra_info("socket")
-        ip = ":".join(str(part) for part in sock.getpeername())
-        log.exception(f"Fatal error in {ip} connection handler")
-        writer.close()
-
-
-async def close_conns() -> None:
-    log.debug("Disconnecting connections...")
-    await asyncio.gather(*[conn.call(Command.QUIT, no_response=True) for conn in conns.values()])
-    await asyncio.gather(*[conn.disconnect() for conn in conns.values()])
-
-
-async def start_aiohttp():
-    from aiohttp import web, ClientSession
-
-    sess = ClientSession()
-
-    async def mux_txn(req: web.Request) -> web.Response:
-        await asyncio.gather(*[sess.put(
-            url=(conn.http_address / "transactions" / req.match_info["txnid"]).with_query({
-                "access_token": req.rel_url.query["access_token"],
-            }),
-            data=await req.read(),
-        ) for conn in conns.values()])
-        return web.json_response({})
-
-    app = web.Application()
-    app.router.add_route("PUT", "/transactions/{txnid}", mux_txn)
-    app.router.add_route("PUT", "/_matrix/app/v1/transactions/{txnid}", mux_txn)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '127.0.2.3', 29317)
-    await site.start()
-
+if args.log_config:
+    with open(args.log_config, "r") as file:
+        logging.config.dictConfig(YAML().load(file))
+log = logging.getLogger("mau.mix.init")
 
 loop = asyncio.get_event_loop()
 
 if args.unix:
-    server_creator = asyncio.start_unix_server(try_handle_conn, args.unix, loop=loop)
+    server_creator = asyncio.start_unix_server(conn_manager, args.unix, loop=loop)
     listen_addr = f"unix://{args.unix}"
 else:
-    server_creator = asyncio.start_server(try_handle_conn, args.ip, args.port, loop=loop)
+    server_creator = asyncio.start_server(conn_manager, args.ip, args.port, loop=loop)
     listen_addr = f"tcp://{args.ip}:{args.port}"
 log.debug("Starting server...")
 server = loop.run_until_complete(server_creator)
 log.info(f"Listening at {listen_addr}")
-loop.run_until_complete(start_aiohttp())
+loop.run_until_complete(txn_mux.start_aiohttp())
 try:
     loop.run_forever()
 except KeyboardInterrupt:
     log.debug("Interrupt received, stopping...")
-    loop.run_until_complete(close_conns())
+    loop.run_until_complete(conn_manager.close_all())
     server.close()
     loop.run_until_complete(server.wait_closed())
 except Exception:

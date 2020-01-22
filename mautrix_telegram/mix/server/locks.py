@@ -17,13 +17,13 @@ from typing import Dict
 import asyncio
 
 from ..protocol import Command, Response
-from ..handlers import register_handler, HandlerReturn
+from ..handlers import register_handler, HandlerReturn, ConnectionHandler
 
 locks: Dict[bytes, asyncio.Lock] = {}
 
 
 @register_handler(Command.LOCK)
-async def on_lock(payload: bytes) -> HandlerReturn:
+async def on_lock(_: ConnectionHandler, payload: bytes) -> HandlerReturn:
     try:
         lock = locks[payload]
     except KeyError:
@@ -33,7 +33,7 @@ async def on_lock(payload: bytes) -> HandlerReturn:
 
 
 @register_handler(Command.OPTIONAL_LOCK)
-async def on_optional_lock(payload: bytes) -> HandlerReturn:
+async def on_optional_lock(_: ConnectionHandler, payload: bytes) -> HandlerReturn:
     try:
         await locks[payload].acquire()
         return Response.LOCKED
@@ -42,6 +42,6 @@ async def on_optional_lock(payload: bytes) -> HandlerReturn:
 
 
 @register_handler(Command.UNLOCK)
-async def on_unlock(payload: bytes) -> HandlerReturn:
+async def on_unlock(_: ConnectionHandler, payload: bytes) -> HandlerReturn:
     locks[payload].release()
     return Response.UNLOCKED

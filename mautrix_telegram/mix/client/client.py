@@ -28,13 +28,14 @@ class MixClient:
     unix: bool
     host: str
     port: int
-    conn_id: str
+    conn_id: int
+    conn_name: str
     http_address: str
     _handler: ConnectionHandler
     _writer: asyncio.StreamWriter
     _reader: asyncio.StreamReader
 
-    def __init__(self, address: str, conn_id: str, http_address: str,
+    def __init__(self, address: str, conn_id: int, conn_name: str, http_address: str,
                  loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
         if address.startswith("tcp://"):
             self.unix = False
@@ -51,6 +52,7 @@ class MixClient:
         else:
             raise ValueError("Unknown protocol")
         self.conn_id = conn_id
+        self.conn_name = conn_name
         self.http_address = http_address
         self.loop = loop or asyncio.get_event_loop()
 
@@ -76,10 +78,12 @@ class MixClient:
                 self.log.exception(f"Connection to mix server failed, retrying in 10 seconds")
                 await asyncio.sleep(10)
                 continue
-            self._handler = ConnectionHandler(r, w, is_server=False, log=self.log, loop=self.loop)
+            self._handler = ConnectionHandler(r, w, id=self.conn_id, name=self.conn_name,
+                                              http_address=self.http_address, is_server=False,
+                                              log=self.log, loop=self.loop)
             self.log.debug("Connection OK, sending init command...")
             try:
-                payload = f"{self.conn_id};{self.http_address}".encode("utf-8")
+                payload = f"{self.conn_id};{self.conn_name};{self.http_address}".encode("utf-8")
                 await self._handler.call(Command.CONNECT, payload,
                                          expected_response=(Response.CONNECT_OK,))
                 break
@@ -94,7 +98,7 @@ class MixClient:
     def call(self, cmd: Command, payload: bytes,
              expected_response: Optional[Tuple[Response, ...]] = None
              ) -> Awaitable[Tuple[Response, bytes]]:
-        return self._handler.call(cmd, payload, expected_response)
+        return self._handler.call(cmd, payload, expected_response=expected_response)
 
     def listen(self) -> None:
         self._handler.start()

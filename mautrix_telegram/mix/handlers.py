@@ -24,7 +24,7 @@ from .protocol import Response, Command, read, write
 from .errors import ErrorResponse, UnexpectedResponse
 
 HandlerReturn = Union[Tuple[Response, bytes], Response]
-Handler = Callable[[bytes], Awaitable[HandlerReturn]]
+Handler = Callable[['ConnectionHandler', bytes], Awaitable[HandlerReturn]]
 
 commands: Dict[Command, Handler] = {}
 
@@ -38,7 +38,7 @@ def register_handler(cmd: Command) -> Callable[[Handler], Handler]:
 
 
 @register_handler(Command.UNKNOWN)
-async def unknown_command(_: bytes) -> HandlerReturn:
+async def unknown_command(_1: 'ConnectionHandler', _2: bytes) -> HandlerReturn:
     return Response.ERROR, b"unknown command"
 
 
@@ -51,10 +51,14 @@ class ConnectionHandler:
     _req_id: int
     _listen_task: Optional[asyncio.Task]
     is_server: bool
+
+    id: int
+    name: str
     http_address: URL
 
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
-                 is_server: bool, log: Optional[logging.Logger] = None,
+                 id: int, name: str, http_address: str, is_server: bool,
+                 log: Optional[logging.Logger] = None,
                  loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
         self._reader = reader
         self._writer = writer
@@ -64,6 +68,9 @@ class ConnectionHandler:
         self._ongoing_commands = {}
         self._req_id = 0
         self._listen_task = None
+        self.id = id
+        self.name = name
+        self.http_address = URL(http_address)
 
     @property
     def ip(self) -> str:
@@ -75,7 +82,7 @@ class ConnectionHandler:
         self._req_id += -1 if self.is_server else +1
         return self._req_id
 
-    async def call(self, cmd: Command, payload: bytes = b"",
+    async def call(self, cmd: Command, payload: bytes = b"", throw_error: bool = True,
                    expected_response: Optional[Tuple[Response, ...]] = None,
                    timeout: int = 5, no_response: bool = False) -> Tuple[Response, bytes]:
         if not isinstance(cmd, Command):
@@ -92,16 +99,17 @@ class ConnectionHandler:
         if not self._listen_task:
             asyncio.ensure_future(self._read_one())
         resp, payload = await asyncio.wait_for(future, timeout=timeout)
-        if resp == Response.ERROR:
-            raise ErrorResponse(payload)
-        elif (expected_response and resp not in expected_response) or not isinstance(resp,
-                                                                                     Response):
-            raise UnexpectedResponse(resp, payload, expected_response)
+        if throw_error:
+            if resp == Response.ERROR:
+                raise ErrorResponse(payload)
+            elif ((expected_response and resp not in expected_response)
+                  or not isinstance(resp, Response)):
+                raise UnexpectedResponse(resp, payload, expected_response)
         return resp, payload
 
     async def _handle_command(self, req_id: int, cmd: Command, payload: bytes) -> None:
         try:
-            return_val = await commands[cmd](payload)
+            return_val = await commands[cmd](self, payload)
             if isinstance(return_val, Response):
                 resp = return_val
                 data = b""

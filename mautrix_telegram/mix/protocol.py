@@ -26,8 +26,10 @@ class Command(IntEnum):
     LOCK = 3
     OPTIONAL_LOCK = 4
     UNLOCK = 5
-    BROADCAST_CACHE_UPDATE = 6
-    UPDATE_CACHE = 7
+    PROXY = 7
+    BROADCAST = 8
+    UPDATE_CACHE = 9
+    TELEGRAM_RPC = 10
 
 
 class Response(IntEnum):
@@ -37,6 +39,7 @@ class Response(IntEnum):
     LOCKED = -4
     LOCK_NOT_FOUND = -5
     UNLOCKED = -6
+    BROADCAST_RESPONSES = -7
 
 
 # Header: request ID (int32), action code (int8), payload length (uint32)
