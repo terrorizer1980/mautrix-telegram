@@ -50,6 +50,7 @@ class ConnectionHandler:
     _ongoing_commands: Dict[int, asyncio.Future]
     _req_id: int
     _listen_task: Optional[asyncio.Task]
+    _is_listening: bool
     is_server: bool
 
     id: int
@@ -68,6 +69,7 @@ class ConnectionHandler:
         self._ongoing_commands = {}
         self._req_id = 0
         self._listen_task = None
+        self._is_listening = False
         self.id = id
         self.name = name
         self.http_address = URL(http_address)
@@ -96,7 +98,7 @@ class ConnectionHandler:
         await write(self._writer, req_id, cmd, payload)
         if no_response:
             return Response.UNKNOWN, b""
-        if not self._listen_task:
+        if not self._is_listening:
             asyncio.ensure_future(self._read_one())
         resp, payload = await asyncio.wait_for(future, timeout=timeout)
         if throw_error:
@@ -155,13 +157,19 @@ class ConnectionHandler:
         return False
 
     async def run(self) -> None:
+        if self._is_listening:
+            raise RuntimeError("Already listening")
+        self._is_listening = True
         try:
-            while not await self._read_one():
-                pass
+            stop = False
+            while not stop:
+                stop = await self._read_one()
         except asyncio.CancelledError:
             self._log.info("Reader cancelled, disconnecting...")
         except Exception:
             self._log.exception("Fatal error in listener, disconnecting...")
+        finally:
+            self._is_listening = False
         try:
             await self.disconnect()
         except Exception:
