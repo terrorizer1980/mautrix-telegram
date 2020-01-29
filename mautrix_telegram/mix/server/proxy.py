@@ -17,13 +17,10 @@ import asyncio
 import struct
 import pickle
 
-from ..protocol import Command, Response
+from ..protocol import (Command, Response, proxy_header, proxy_header_len, broadcast_header,
+                        broadcast_header_len)
 from ..handlers import ConnectionHandler, register_handler, HandlerReturn
 from .conns import conn_manager
-
-
-proxy_header = "!Ib"
-proxy_header_len = struct.calcsize(proxy_header)
 
 
 @register_handler(Command.PROXY)
@@ -41,10 +38,6 @@ async def proxy(_: ConnectionHandler, payload: bytes) -> HandlerReturn:
     except KeyError:
         return Response.ERROR, b"proxy target connection not found"
     return await conn.call(cmd, payload, throw_error=False)
-
-
-broadcast_header = "!b?"
-broadcast_header_len = struct.calcsize(broadcast_header)
 
 
 @register_handler(Command.BROADCAST)

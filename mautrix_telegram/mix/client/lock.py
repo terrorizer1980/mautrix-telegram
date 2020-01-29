@@ -31,10 +31,12 @@ class MixLock:
 
     async def __aenter__(self) -> None:
         if self.required:
-            resp, payload = await self.client.call(Command.LOCK, self.key, (Response.LOCKED,))
+            resp, payload = await self.client.call(Command.LOCK, self.key,
+                                                   expected_response=(Response.LOCKED,))
         else:
             resp, payload = await self.client.call(Command.OPTIONAL_LOCK, self.key,
-                                                   (Response.LOCKED, Response.LOCK_NOT_FOUND))
+                                                   expected_response=(Response.LOCKED,
+                                                                      Response.LOCK_NOT_FOUND))
         self.locked = resp == Response.LOCKED
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

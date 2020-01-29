@@ -13,22 +13,27 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Awaitable
+import pickle
 
 from telethon import TelegramClient, utils
-from telethon.tl.functions import InvokeWithoutUpdatesRequest
 from telethon.tl.functions.messages import SendMediaRequest
-from telethon.tl.functions.help import GetConfigRequest
 from telethon.tl.types import (InputMediaUploadedDocument, InputMediaUploadedPhoto,
                                TypeDocumentAttribute, TypeInputMedia, TypeInputPeer,
                                TypeMessageEntity, TypeMessageMedia, TypePeer)
 from telethon.tl.patched import Message
 from telethon.sessions.abstract import Session
 
+from .mix.client import MixClient
+from .mix import Command, Response
+
 
 class MautrixTelegramClient(TelegramClient):
     session: Session
     no_updates: bool = False
+    mix: MixClient
+    mxid: str
+    target_bucket: int
 
     async def upload_file_direct(self, file: bytes, mime_type: str = None,
                                  attributes: List[TypeDocumentAttribute] = None,
@@ -57,27 +62,22 @@ class MautrixTelegramClient(TelegramClient):
                                    reply_to_msg_id=reply_to)
         return self._get_response_message(request, await self(request), entity)
 
-    def __call__(self, request, ordered=False):
-        if self.no_updates and not isinstance(request, InvokeWithoutUpdatesRequest):
-            request = InvokeWithoutUpdatesRequest(request)
-        return super().__call__(request, ordered)
+    async def __call__(self, request, ordered=False):
+        if self.no_updates:
+            print(f"Proxying {request} through {self.target_bucket}")
+            req = pickle.dumps((self.mxid, request))
+            code, data = await self.mix.call(Command.TELEGRAM_RPC, req, proxy=self.target_bucket,
+                                             expected_response=(Response.TELEGRAM_RPC_OK,
+                                                                Response.TELEGRAM_RPC_ERROR))
+            resp = pickle.loads(data)
+            if code == Response.TELEGRAM_RPC_ERROR:
+                raise resp
+            else:
+                return resp
+        else:
+            return await super().__call__(request, ordered)
 
-    async def connect(self) -> None:
-        if not await self._sender.connect(self._connection(
-            self.session.server_address,
-            self.session.port,
-            self.session.dc_id,
-            loop=self._loop,
-            loggers=self._log,
-            proxy=self._proxy
-        )):
-            # We don't want to init or modify anything if we were already connected
-            return
-
-        self.session.auth_key = self._sender.auth_key
-        self.session.save()
-
-        await self._sender.send(self._init_with(GetConfigRequest()))
-
-        if not self.no_updates:
-            self._updates_handle = self._loop.create_task(self._update_loop())
+    def connect(self) -> Awaitable[None]:
+        if self.no_updates:
+            raise ValueError("Can't connect() delegated client")
+        return super().connect()

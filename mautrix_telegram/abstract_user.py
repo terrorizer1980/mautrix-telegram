@@ -70,9 +70,9 @@ class AbstractUser(ABC):
     loop: asyncio.AbstractEventLoop = None
     log: logging.Logger
     az: AppService
+    ctx: 'Context'
     relaybot: Optional['Bot']
     ignore_incoming_bot_events: bool = True
-    should_process_bucket: Callable[[Union[int, str]], bool]
 
     client: Optional[MautrixTelegramClient]
     mxid: Optional[UserID]
@@ -175,6 +175,10 @@ class AbstractUser(ABC):
             self.client.add_event_handler(self._update_catch)
         else:
             self.client.no_updates = True
+            mxid = "bot" if self.is_relaybot else self.mxid
+            self.client.target_bucket = self.ctx.bucket_for(mxid)
+            self.client.mxid = mxid
+            self.client.mix = self.ctx.mix
 
     @abstractmethod
     async def update(self, update: TypeUpdate) -> bool:
@@ -219,8 +223,12 @@ class AbstractUser(ABC):
     async def start(self, delete_unless_authenticated: bool = False) -> 'AbstractUser':
         if not self.client:
             self._init_client()
-        await self.client.connect()
-        self.log.debug(f"{'Bot' if self.is_relaybot else self.mxid} connected: {self.connected}")
+        name = "Bot" if self.is_relaybot else self.mxid
+        if self.in_bucket:
+            await self.client.connect()
+            self.log.debug(f"{name} connected: {self.connected}")
+        else:
+            self.log.debug(f"Proxy client created for {name} to bucket{self.client.target_bucket}")
         return self
 
     async def ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
@@ -453,5 +461,5 @@ def init(context: 'Context') -> None:
     AbstractUser.az, config, AbstractUser.loop, AbstractUser.relaybot = context.core
     AbstractUser.ignore_incoming_bot_events = config["bridge.relaybot.ignore_own_incoming_events"]
     AbstractUser.session_container = context.session_container
-    AbstractUser.should_process_bucket = context.should_process_bucket
+    AbstractUser.ctx = context
     MAX_DELETIONS = config.get("bridge.max_telegram_delete", 10)

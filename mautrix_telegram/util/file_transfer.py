@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, Tuple, Union, Dict
+from typing import Optional, Tuple, Union, Dict, TYPE_CHECKING
 from io import BytesIO
 import time
 import logging
@@ -31,10 +31,12 @@ from telethon.errors import (AuthBytesInvalidError, AuthKeyInvalidError, Locatio
 from mautrix.appservice import IntentAPI
 
 
-from ..tgclient import MautrixTelegramClient
 from ..db import TelegramFile as DBTelegramFile
 from ..util import sane_mimetypes
 from .parallel_file_transfer import parallel_transfer_to_matrix
+
+if TYPE_CHECKING:
+    from ..tgclient import MautrixTelegramClient
 
 try:
     from PIL import Image
@@ -115,7 +117,7 @@ def _location_to_id(location: TypeLocation) -> str:
         return f"{location.volume_id}-{location.local_id}"
 
 
-async def transfer_thumbnail_to_matrix(client: MautrixTelegramClient, intent: IntentAPI,
+async def transfer_thumbnail_to_matrix(client: 'MautrixTelegramClient', intent: IntentAPI,
                                        thumbnail_loc: TypeLocation, video: bytes,
                                        mime: str) -> Optional[DBTelegramFile]:
     if not Image or not VideoFileClip:
@@ -160,7 +162,7 @@ transfer_locks: Dict[str, asyncio.Lock] = {}
 TypeThumbnail = Optional[Union[TypeLocation, TypePhotoSize]]
 
 
-async def transfer_file_to_matrix(client: MautrixTelegramClient, intent: IntentAPI,
+async def transfer_file_to_matrix(client: 'MautrixTelegramClient', intent: IntentAPI,
                                   location: TypeLocation, thumbnail: TypeThumbnail = None,
                                   is_sticker: bool = False, tgs_convert: Optional[dict] = None,
                                   filename: Optional[str] = None, parallel_id: Optional[int] = None
@@ -184,7 +186,7 @@ async def transfer_file_to_matrix(client: MautrixTelegramClient, intent: IntentA
                                                        filename, parallel_id)
 
 
-async def _unlocked_transfer_file_to_matrix(client: MautrixTelegramClient, intent: IntentAPI,
+async def _unlocked_transfer_file_to_matrix(client: 'MautrixTelegramClient', intent: IntentAPI,
                                             loc_id: str, location: TypeLocation,
                                             thumbnail: TypeThumbnail, is_sticker: bool,
                                             tgs_convert: Optional[dict], filename: Optional[str],

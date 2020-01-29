@@ -13,7 +13,8 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, List, AsyncGenerator, Union, Awaitable, DefaultDict, Tuple
+from typing import (Optional, List, AsyncGenerator, Union, Awaitable, DefaultDict, Tuple,
+                    TYPE_CHECKING)
 from collections import defaultdict
 import hashlib
 import asyncio
@@ -36,8 +37,10 @@ from telethon import utils, helpers
 from mautrix.appservice import IntentAPI
 from mautrix.types import ContentURI
 
-from ..tgclient import MautrixTelegramClient
 from ..db import TelegramFile as DBTelegramFile
+
+if TYPE_CHECKING:
+    from ..tgclient import MautrixTelegramClient
 
 log: logging.Logger = logging.getLogger("mau.util")
 
@@ -109,14 +112,14 @@ class UploadSender:
 
 
 class ParallelTransferrer:
-    client: MautrixTelegramClient
+    client: 'MautrixTelegramClient'
     loop: asyncio.AbstractEventLoop
     dc_id: int
     senders: Optional[List[Union[DownloadSender, UploadSender]]]
     auth_key: AuthKey
     upload_ticker: int
 
-    def __init__(self, client: MautrixTelegramClient, dc_id: Optional[int] = None) -> None:
+    def __init__(self, client: 'MautrixTelegramClient', dc_id: Optional[int] = None) -> None:
         self.client = client
         self.loop = self.client.loop
         self.dc_id = dc_id or self.client.session.dc_id
@@ -240,7 +243,7 @@ class ParallelTransferrer:
 parallel_transfer_locks: DefaultDict[int, asyncio.Lock] = defaultdict(lambda: asyncio.Lock())
 
 
-async def parallel_transfer_to_matrix(client: MautrixTelegramClient, intent: IntentAPI,
+async def parallel_transfer_to_matrix(client: 'MautrixTelegramClient', intent: IntentAPI,
                                       loc_id: str, location: TypeLocation, filename: str,
                                       parallel_id: int) -> DBTelegramFile:
     size = location.size
@@ -256,7 +259,7 @@ async def parallel_transfer_to_matrix(client: MautrixTelegramClient, intent: Int
                           width=None, height=None)
 
 
-async def _internal_transfer_to_telegram(client: MautrixTelegramClient, response: ClientResponse
+async def _internal_transfer_to_telegram(client: 'MautrixTelegramClient', response: ClientResponse
                                          ) -> Tuple[TypeInputFile, int]:
     file_id = helpers.generate_random_long()
     file_size = response.content_length
@@ -289,7 +292,7 @@ async def _internal_transfer_to_telegram(client: MautrixTelegramClient, response
         return InputFile(file_id, part_count, "upload", hash_md5.hexdigest()), file_size
 
 
-async def parallel_transfer_to_telegram(client: MautrixTelegramClient, intent: IntentAPI,
+async def parallel_transfer_to_telegram(client: 'MautrixTelegramClient', intent: IntentAPI,
                                         uri: ContentURI, parallel_id: int
                                         ) -> Tuple[TypeInputFile, int]:
     url = intent.api.get_download_url(uri)

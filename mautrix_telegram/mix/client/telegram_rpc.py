@@ -22,8 +22,14 @@ from ..handlers import register_handler, Command, Response, HandlerReturn, Conne
 @register_handler(Command.TELEGRAM_RPC)
 async def telegram_rpc(_: ConnectionHandler, payload: bytes) -> HandlerReturn:
     user_id, request = pickle.loads(payload)
-    user = u.User.get_by_mxid(user_id, create=False)
+    if user_id == "bot":
+        user = u.User.relaybot
+    else:
+        user = u.User.get_by_mxid(user_id, create=False)
     if not user or not user.in_bucket:
         return Response.ERROR, b"user not in this bucket"
-    resp = await user.client(request)
-    return pickle.dumps(resp)
+    try:
+        resp = await user.client(request)
+    except Exception as e:
+        return Response.TELEGRAM_RPC_ERROR, pickle.dumps(e)
+    return Response.TELEGRAM_RPC_OK, pickle.dumps(resp)

@@ -16,10 +16,12 @@
 from typing import Optional, Tuple, Awaitable
 import logging
 import asyncio
+import struct
 
-from ..protocol import Command, Response
+from ..protocol import Command, Response, proxy_header
 from ..handlers import ConnectionHandler
 from ..errors import MixError
+from . import telegram_rpc
 
 
 class MixClient:
@@ -95,9 +97,12 @@ class MixClient:
             await asyncio.sleep(10)
         self.log.info(f"Successfully connected to mix server at {self.address}")
 
-    def call(self, cmd: Command, payload: bytes,
+    def call(self, cmd: Command, payload: bytes, *, proxy: Optional[int] = None,
              expected_response: Optional[Tuple[Response, ...]] = None
              ) -> Awaitable[Tuple[Response, bytes]]:
+        if proxy:
+            payload = struct.pack(proxy_header, proxy, cmd) + payload
+            cmd = Command.PROXY
         return self._handler.call(cmd, payload, expected_response=expected_response)
 
     def listen(self) -> None:

@@ -69,9 +69,14 @@ class Context:
     def bucket_info(self) -> Tuple[int, int]:
         return self.bucket_count, self.bucket
 
+    def bucket_for(self, val: Union[int, str]) -> int:
+        if self.bucket_count <= 1:
+            return 0
+        if isinstance(val, str):
+            val = int(hashlib.md5(val.encode("utf-8")).hexdigest(), 16)
+        return val % self.bucket_count
+
     def should_process_bucket(self, val: Union[int, str]) -> bool:
         if self.bucket_count <= 1:
             return True
-        if isinstance(val, str):
-            val = int(hashlib.md5(val.encode("utf-8")).hexdigest(), 16)
-        return val % self.bucket_count == self.bucket
+        return self.bucket_for(val) == self.bucket

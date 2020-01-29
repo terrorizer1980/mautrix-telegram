@@ -105,8 +105,9 @@ class TelegramBridge(Bridge):
             self.config[k] = v
             # TODO remove debug print
             print(f"{k} -> {self.config[k]}")
-        conn_id = f"bucket{self.args.bucket - 1}"
-        return MixClient(address=self.config["scaling.mix"], conn_id=conn_id,
+        conn_id = self.args.bucket - 1
+        conn_name = f"bucket{conn_id}"
+        return MixClient(address=self.config["scaling.mix"], conn_id=conn_id, conn_name=conn_name,
                          http_address=self.config["appservice.address"], loop=self.loop)
 
     def prepare_bridge(self) -> None:
@@ -147,7 +148,7 @@ bridge = TelegramBridge()
 
 
 @register_mix_handler(Command.QUIT)
-async def mix_quit(_: bytes) -> HandlerReturn:
+async def mix_quit(_1, _2: bytes) -> HandlerReturn:
     bridge.manual_stop()
     return Response.ERROR, b"not stopped"
 

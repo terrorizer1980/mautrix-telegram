@@ -30,7 +30,7 @@ async def start_aiohttp():
                 "access_token": req.rel_url.query["access_token"],
             }),
             data=await req.read(),
-        ) for conn in conn_manager.values()])
+        ) for conn in conn_manager.conns.values()])
         return web.json_response({})
 
     app = web.Application()

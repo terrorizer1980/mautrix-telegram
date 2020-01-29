@@ -41,11 +41,20 @@ class Response(IntEnum):
     UNLOCKED = -6
     BROADCAST_RESPONSES = -7
     TELEGRAM_RPC_OK = -8
+    TELEGRAM_RPC_ERROR = -9
 
 
 # Header: request ID (int32), action code (int8), payload length (uint32)
 _header = "!ibI"
 _header_len = struct.calcsize(_header)
+
+# Proxy header: target conn_id (int32), action code (int8)
+proxy_header = "!Ib"
+proxy_header_len = struct.calcsize(proxy_header)
+
+# Proxy header: action code (int8), echo (bool)
+broadcast_header = "!b?"
+broadcast_header_len = struct.calcsize(broadcast_header)
 
 
 async def write(writer: asyncio.StreamWriter, req_id: int, action: Union[Response, Command],
