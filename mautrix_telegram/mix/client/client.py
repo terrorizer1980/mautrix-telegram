@@ -13,10 +13,11 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, Tuple, Awaitable
+from typing import Optional, Tuple, Awaitable, Any
 import logging
 import asyncio
 import struct
+import pickle
 
 from ..protocol import Command, Response, proxy_header
 from ..handlers import ConnectionHandler
@@ -96,6 +97,17 @@ class MixClient:
             await self._handler.disconnect()
             await asyncio.sleep(10)
         self.log.info(f"Successfully connected to mix server at {self.address}")
+
+    async def pickled_call(self, cmd: Command, payload: Any, target: int) -> Any:
+        payload = pickle.dumps(payload)
+        resp, data = await self.call(cmd, payload, proxy=target,
+                                     expected_response=(Response.PICKLED_OK,
+                                                        Response.PICKLED_ERROR))
+        data = pickle.loads(data)
+        if resp == Response.PICKLED_ERROR:
+            raise data
+        else:
+            return data
 
     def call(self, cmd: Command, payload: bytes, *, proxy: Optional[int] = None,
              expected_response: Optional[Tuple[Response, ...]] = None

@@ -184,7 +184,7 @@ class User(AbstractUser, BaseUser):
             self.log.exception("Exception in ensure_started")
 
     async def ensure_started(self, even_if_no_session=False) -> 'User':
-        if not self.puppet_whitelisted or self.connected:
+        if not self.puppet_whitelisted or self.connected or not self.in_bucket:
             return self
         async with self._ensure_started_lock:
             return cast(User, await super().ensure_started(even_if_no_session))
@@ -194,7 +194,7 @@ class User(AbstractUser, BaseUser):
         if await self.is_logged_in():
             self.log.debug(f"Ensuring post_login() for {self.name}")
             asyncio.ensure_future(self.post_login(), loop=self.loop)
-        elif delete_unless_authenticated:
+        elif delete_unless_authenticated and self.in_bucket:
             self.log.debug(f"Unauthenticated user {self.name} start()ed, deleting session...")
             await self.client.disconnect()
             self.client.session.delete()

@@ -42,6 +42,7 @@ from ..types import TelegramID
 from ..db import Message as DBMessage
 from ..util import sane_mimetypes, parallel_transfer_to_telegram
 from ..context import Context
+from ..mix import Command
 from .. import puppet as p, user as u, formatter, util
 from .base import BasePortal
 
@@ -250,7 +251,19 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
         file_name = content["net.maunium.telegram.internal.filename"]
         max_image_size = config["bridge.image_as_file_size"] * 1000 ** 2
 
-        if config["bridge.parallel_file_transfer"]:
+        if not client.in_bucket:
+            parallel_id = sender_id if config["bridge.parallel_file_transfer"] else None
+            file_handle, file_size, data = await client.mix.pickled_call(
+                cmd=Command.FILE_TRANSFER_TO_TELEGRAM,
+                payload=(client.mxid, self.main_intent.mxid, content, parallel_id),
+                target=client.target_bucket)
+            if data:
+                mime_new, file_name_new, w_new, h_new = data
+                mime = mime_new or mime
+                file_name = file_name_new or file_name
+                w = w_new or w
+                h = h_new or h
+        elif config["bridge.parallel_file_transfer"]:
             file_handle, file_size = await parallel_transfer_to_telegram(client, self.main_intent,
                                                                          content.url, sender_id)
         else:
@@ -472,10 +485,14 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
             # Invalid peer type
             return
 
-        file = await self.main_intent.download_media(url)
-        mime = magic.from_buffer(file, mime=True)
-        ext = sane_mimetypes.guess_extension(mime)
-        uploaded = await sender.client.upload_file(file, file_name=f"avatar{ext}")
+        if not sender.client.in_bucket:
+            uploaded, _, _ = await sender.client.mix.pickled_call(
+                cmd=Command.FILE_TRANSFER_TO_TELEGRAM,
+                payload=(sender.client.mxid, self.main_intent.mxid, url, None),
+                target=sender.client.target_bucket)
+        else:
+            file = await self.main_intent.download_media(url)
+            uploaded = await sender.client.upload_file(file)
         photo = InputChatUploadedPhoto(file=uploaded)
 
         if self.peer_type == "chat":

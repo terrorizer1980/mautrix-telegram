@@ -13,20 +13,45 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Dict, Callable, Awaitable, Tuple, Union, Optional
+from typing import Dict, Callable, Awaitable, Any, Tuple, Union, Optional
+import functools
+import traceback
 import asyncio
 import logging
+import pickle
 import sys
 
 from yarl import URL
 
 from .protocol import Response, Command, read, write
-from .errors import ErrorResponse, UnexpectedResponse
+from .errors import ErrorResponse, MixError, UnexpectedResponse
 
 HandlerReturn = Union[Tuple[Response, bytes], Response]
 Handler = Callable[['ConnectionHandler', bytes], Awaitable[HandlerReturn]]
+PickleHandler = Callable[[Any], Awaitable[Any]]
 
 commands: Dict[Command, Handler] = {}
+
+log = logging.getLogger("mau.mix.picklerror")
+
+
+def register_pickled_handler(cmd: Command) -> Callable[[PickleHandler], Handler]:
+    def wrapper(fn: PickleHandler) -> Handler:
+        @functools.wraps(fn)
+        async def wrap(_: 'ConnectionHandler', payload: bytes) -> HandlerReturn:
+            data = pickle.loads(payload)
+            try:
+                return Response.PICKLED_OK, pickle.dumps(await fn(data))
+            except MixError as e:
+                return e.response, e.payload
+            except Exception as e:
+                log.exception(f"Error handling {cmd.name}")
+                return Response.PICKLED_ERROR, pickle.dumps(e)
+
+        commands[cmd] = wrap
+        return wrap
+
+    return wrapper
 
 
 def register_handler(cmd: Command) -> Callable[[Handler], Handler]:

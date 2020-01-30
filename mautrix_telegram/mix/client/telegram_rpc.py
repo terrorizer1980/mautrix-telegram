@@ -13,23 +13,80 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import pickle
+from typing import Tuple, Dict, Any, Optional
+
+from telethon.tl import TLRequest, TLObject
+from telethon.tl.types import TypeInputFile
+
+from mautrix.types import UserID, MediaMessageEventContent, MessageType
+from mautrix.appservice import IntentAPI
 
 from ... import user as u
-from ..handlers import register_handler, Command, Response, HandlerReturn, ConnectionHandler
+from ...db import TelegramFile as DBTelegramFile
+from ...util import transfer_file_to_matrix, parallel_transfer_to_telegram, convert_image
+from ..handlers import register_handler, register_pickled_handler, Command, Response, ErrorResponse
 
 
-@register_handler(Command.TELEGRAM_RPC)
-async def telegram_rpc(_: ConnectionHandler, payload: bytes) -> HandlerReturn:
-    user_id, request = pickle.loads(payload)
+def get_user(user_id: UserID) -> 'u.User':
     if user_id == "bot":
         user = u.User.relaybot
     else:
         user = u.User.get_by_mxid(user_id, create=False)
     if not user or not user.in_bucket:
-        return Response.ERROR, b"user not in this bucket"
-    try:
-        resp = await user.client(request)
-    except Exception as e:
-        return Response.TELEGRAM_RPC_ERROR, pickle.dumps(e)
-    return Response.TELEGRAM_RPC_OK, pickle.dumps(resp)
+        raise ErrorResponse(b"user not in this bucket")
+    return user
+
+
+def get_intent(user_id: UserID) -> IntentAPI:
+    az = u.User.ctx.az
+    return az.intent if user_id == az.bot_mxid else az.intent.user(user_id)
+
+
+@register_handler(Command.TELEGRAM_ENSURE_STARTED)
+async def ensure_started(_, payload: bytes) -> Response:
+    user = get_user(UserID(payload[1:].decode("utf-8")))
+    even_if_no_session = bool(payload[0])
+    await user.ensure_started(even_if_no_session)
+    return Response.TELEGRAM_ENSURED_STARTED
+
+
+@register_pickled_handler(Command.TELEGRAM_RPC)
+async def telegram_rpc(data: Tuple[UserID, TLRequest]) -> TLObject:
+    user_id, request = data
+    user = get_user(user_id)
+    return await user.client(request)
+
+
+@register_pickled_handler(Command.FILE_TRANSFER_TO_MATRIX)
+async def rpc_transfer_file_to_matrix(data: Dict[str, Any]) -> Optional[DBTelegramFile]:
+    client = get_user(data.pop("client")).client
+    intent = get_intent(data.pop("intent"))
+    return await transfer_file_to_matrix(client=client, intent=intent, **data)
+
+
+@register_pickled_handler(Command.FILE_TRANSFER_TO_TELEGRAM)
+async def rpc_transfer_file_to_telegram(data: Tuple[UserID, UserID, MediaMessageEventContent, int]
+                                        ) -> Tuple[TypeInputFile, int, Optional[Tuple[Any, ...]]]:
+    client_mxid, intent_mxid, content, parallel_id = data
+    mxc_url = content if isinstance(content, str) else content.url
+    client = get_user(client_mxid).client
+    intent = get_intent(intent_mxid)
+    if parallel_id:
+        handle, size = await parallel_transfer_to_telegram(client, intent, mxc_url, parallel_id)
+        data = None
+    else:
+        file = await intent.download_media(mxc_url)
+        file_name = mime = w = h = None
+
+        if getattr(content, "msgtype") == MessageType.STICKER:
+            if content.info.mimetype != "image/gif":
+                mime, file, w, h = convert_image(file, source_mime=content.info.mimetype,
+                                                      target_type="webp")
+            else:
+                # Remove sticker description
+                file_name = "sticker.gif"
+
+        handle = await client.upload_file(file)
+        size = len(file)
+        data = (mime, file_name, w, h)
+    return handle, size, data

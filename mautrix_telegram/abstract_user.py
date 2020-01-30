@@ -171,11 +171,14 @@ class AbstractUser(ABC):
             loop=self.loop,
             base_logger=base_logger
         )
+        self.client.in_bucket = self.in_bucket
         if self.in_bucket:
             self.client.add_event_handler(self._update_catch)
         else:
             self.client.no_updates = True
             mxid = "bot" if self.is_relaybot else self.mxid
+            self.client._sender = None
+            self.client._init_with = None
             self.client.target_bucket = self.ctx.bucket_for(mxid)
             self.client.mxid = mxid
             self.client.mix = self.ctx.mix
@@ -232,7 +235,7 @@ class AbstractUser(ABC):
         return self
 
     async def ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
-        if self.connected:
+        if self.connected or not self.in_bucket:
             return self
         if even_if_no_session or self.session_container.has_session(self.mxid):
             self.log.debug("Starting client due to ensure_started"

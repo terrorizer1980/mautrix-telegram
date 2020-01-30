@@ -30,6 +30,9 @@ class Command(IntEnum):
     BROADCAST = 8
     UPDATE_CACHE = 9
     TELEGRAM_RPC = 10
+    TELEGRAM_ENSURE_STARTED = 11
+    FILE_TRANSFER_TO_MATRIX = 12
+    FILE_TRANSFER_TO_TELEGRAM = 13
 
 
 class Response(IntEnum):
@@ -40,8 +43,9 @@ class Response(IntEnum):
     LOCK_NOT_FOUND = -5
     UNLOCKED = -6
     BROADCAST_RESPONSES = -7
-    TELEGRAM_RPC_OK = -8
-    TELEGRAM_RPC_ERROR = -9
+    PICKLED_OK = -8
+    PICKLED_ERROR = -9
+    TELEGRAM_ENSURED_STARTED = -10
 
 
 # Header: request ID (int32), action code (int8), payload length (uint32)

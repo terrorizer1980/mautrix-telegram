@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, Tuple, Union, Dict, TYPE_CHECKING
+from typing import Optional, Tuple, Union, Dict, Any, TYPE_CHECKING
 from io import BytesIO
 import time
 import logging
@@ -33,6 +33,7 @@ from mautrix.appservice import IntentAPI
 
 from ..db import TelegramFile as DBTelegramFile
 from ..util import sane_mimetypes
+from ..mix import Command
 from .parallel_file_transfer import parallel_transfer_to_matrix
 
 if TYPE_CHECKING:
@@ -167,6 +168,18 @@ async def transfer_file_to_matrix(client: 'MautrixTelegramClient', intent: Inten
                                   is_sticker: bool = False, tgs_convert: Optional[dict] = None,
                                   filename: Optional[str] = None, parallel_id: Optional[int] = None
                                   ) -> Optional[DBTelegramFile]:
+    if not client.in_bucket:
+        return await client.mix.pickled_call(Command.FILE_TRANSFER_TO_MATRIX, {
+            "client": client.mxid,
+            "intent": intent.mxid,
+            "location": location,
+            "thumbnail": thumbnail,
+            "is_sticker": is_sticker,
+            "tgs_convert": tgs_convert,
+            "filename": filename,
+            "parallel_id": parallel_id,
+        }, target=client.target_bucket)
+
     location_id = _location_to_id(location)
     if not location_id:
         return None

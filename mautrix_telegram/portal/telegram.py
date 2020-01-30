@@ -14,12 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Awaitable, Dict, List, Optional, Tuple, Union, NamedTuple, TYPE_CHECKING
-from html import escape as escape_html
 from abc import ABC
-import random
-import mimetypes
-import codecs
 import unicodedata
+import mimetypes
+import random
+import codecs
+import pickle
 import base64
 
 from sqlalchemy.exc import IntegrityError
@@ -45,6 +45,7 @@ from ..types import TelegramID
 from ..db import Message as DBMessage, TelegramFile as DBTelegramFile
 from ..util import sane_mimetypes
 from ..context import Context
+from ..mix import Command
 from .. import puppet as p, user as u, formatter, util
 from .base import BasePortal
 
@@ -75,7 +76,12 @@ class PortalTelegram(BasePortal, ABC):
     async def handle_telegram_photo(self, source: 'AbstractUser', intent: IntentAPI, evt: Message,
                                     relates_to: Dict = None) -> Optional[EventID]:
         loc, largest_size = self._get_largest_photo_size(evt.media.photo)
-        file = await util.transfer_file_to_matrix(source.client, intent, loc)
+        if not source.in_bucket:
+            file = await self.mix.pickled_call(Command.FILE_TRANSFER_TO_MATRIX,
+                                               payload=(source.mxid, intent.mxid, loc),
+                                               target=source.client.target_bucket)
+        else:
+            file = await util.transfer_file_to_matrix(source.client, intent, loc)
         if not file:
             return None
         if self.get_config("inline_images") and (evt.message
@@ -502,7 +508,7 @@ class PortalTelegram(BasePortal, ABC):
         await self.main_intent.set_power_levels(self.mxid, levels)
 
     async def receive_telegram_pin_id(self, msg_id: TelegramID, receiver: TelegramID) -> None:
-        tg_space = receiver  if self.peer_type != "channel" else self.tgid
+        tg_space = receiver if self.peer_type != "channel" else self.tgid
         message = DBMessage.get_one_by_tgid(msg_id, tg_space) if msg_id != 0 else None
         if message:
             await self.main_intent.set_pinned_messages(self.mxid, [message.mxid])
