@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Awaitable, Dict, List, Optional, Tuple, Union, Any, TYPE_CHECKING
+from typing import Awaitable, Dict, List, Optional, Tuple, Union, Any, Set, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import asyncio
 import logging
@@ -35,7 +35,7 @@ from mautrix.util.simple_template import SimpleTemplate
 
 from ..types import TelegramID
 from ..context import Context
-from ..db import Portal as DBPortal
+from ..db import Portal as DBPortal, Message as DBMessage
 from ..mix.client import MixClient
 from .. import puppet as p, user as u, util
 from .deduplication import PortalDedup
@@ -88,6 +88,8 @@ class BasePortal(ABC):
     photo_id: Optional[str]
     local_config: Dict[str, Any]
     deleted: bool
+    backfilling: bool
+    backfill_leave: Optional[Set[IntentAPI]]
     log: logging.Logger
 
     alias: Optional[RoomAlias]
@@ -117,6 +119,8 @@ class BasePortal(ABC):
         self._main_intent = None
         self.deleted = False
         self.log = self.base_log.getChild(self.tgid_log if self.tgid else self.mxid)
+        self.backfilling = False
+        self.backfill_leave = None
 
         self.dedup = PortalDedup(self)
         if self.mix:
@@ -348,6 +352,7 @@ class BasePortal(ABC):
             pass
         if self._db_instance:
             self._db_instance.delete()
+        DBMessage.delete_all(self.mxid)
         self.deleted = True
 
     @classmethod
@@ -495,6 +500,10 @@ class BasePortal(ABC):
     @abstractmethod
     def handle_matrix_power_levels(self, sender: 'u.User', new_levels: Dict[UserID, int],
                                    old_levels: Dict[UserID, int]) -> Awaitable[None]:
+        pass
+
+    @abstractmethod
+    def backfill(self, source: 'AbstractUser') -> Awaitable[None]:
         pass
 
     # endregion

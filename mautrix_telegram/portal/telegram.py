@@ -30,7 +30,7 @@ from telethon.tl.types import (
     MessageMediaPoll, MessageActionChannelCreate, MessageActionChatAddUser,
     MessageActionChatCreate, MessageActionChatDeletePhoto, MessageActionChatDeleteUser,
     MessageActionChatEditPhoto, MessageActionChatEditTitle, MessageActionChatJoinedByLink,
-    MessageActionChatMigrateTo, MessageActionPinMessage, MessageActionGameScore,
+    MessageActionChatMigrateTo, MessageActionChannelMigrateFrom, MessageActionGameScore,
     MessageMediaDocument, MessageMediaGeo, MessageMediaPhoto, MessageMediaUnsupported,
     MessageMediaGame, PeerUser, PhotoCachedSize, TypeChannelParticipant, TypeChatParticipant,
     TypeDocumentAttribute, TypeMessageAction, TypePhotoSize, PhotoSize, UpdateChatUserTyping,
@@ -362,6 +362,36 @@ class PortalTelegram(BasePortal, ABC):
                   edit_index=prev_edit_msg.edit_index + 1).insert()
         DBMessage.update_by_mxid(temporary_identifier, self.mxid, mxid=event_id)
 
+    async def backfill(self, source: 'AbstractUser') -> None:
+        last = DBMessage.find_last(self.mxid, (source.tgid if self.peer_type != "channel"
+                                               else self.tgid))
+        min_id = last.tgid if last else 0
+        self.backfilling = True
+        self.backfill_leave = set()
+        if self.peer_type == "user":
+            sender = p.Puppet.get(source.tgid)
+            await self.main_intent.invite_user(self.mxid, sender.default_mxid)
+            await sender.default_mxid_intent.join_room_by_id(self.mxid)
+            self.backfill_leave.add(sender.default_mxid_intent)
+        max_file_size = min(config["bridge.max_document_size"], 1500) * 1024 * 1024
+        async with source.client.takeout(files=True, megagroups=self.megagroup,
+                                         chats=self.peer_type == "chat",
+                                         users=self.peer_type == "user",
+                                         channels=(self.peer_type == "channel"
+                                                   and not self.megagroup),
+                                         max_file_size=max_file_size
+                                         ) as takeout_client:
+            async for message in takeout_client.iter_messages(await self.get_input_entity(source),
+                                                              reverse=True, min_id=min_id):
+                sender = p.Puppet.get(message.sender_id)
+                # if isinstance(message, MessageService):
+                #    await self.handle_telegram_action(source, sender, message)
+                await self.handle_telegram_message(source, sender, message)
+        for intent in self.backfill_leave:
+            await intent.leave_room(self.mxid)
+        self.backfilling = False
+        self.backfill_leave = None
+
     async def handle_telegram_message(self, source: 'AbstractUser', sender: p.Puppet,
                                       evt: Message) -> None:
         if not self.mxid:
@@ -389,7 +419,7 @@ class PortalTelegram(BasePortal, ABC):
                               tg_space=tg_space, edit_index=0).insert()
                 return
 
-        if self.dedup.pre_db_check and self.peer_type == "channel":
+        if self.backfilling or (self.dedup.pre_db_check and self.peer_type == "channel"):
             msg = DBMessage.get_one_by_tgid(TelegramID(evt.id), tg_space)
             if msg:
                 self.log.debug(f"Ignoring message {evt.id} (src {source.tgid}) as it was already"
@@ -408,7 +438,13 @@ class PortalTelegram(BasePortal, ABC):
                          MessageMediaGame, MessageMediaPoll, MessageMediaUnsupported)
         media = evt.media if hasattr(evt, "media") and isinstance(evt.media,
                                                                   allowed_media) else None
-        intent = sender.intent_for(self) if sender else self.main_intent
+        if sender:
+            intent = sender.intent_for(self)
+            if self.backfilling and intent != sender.default_mxid_intent:
+                intent = sender.default_mxid_intent
+                self.backfill_leave.add(intent)
+        else:
+            intent = self.main_intent
         if not media and evt.message:
             is_bot = sender.is_bot if sender else False
             event_id = await self.handle_telegram_text(source, intent, is_bot, evt)
