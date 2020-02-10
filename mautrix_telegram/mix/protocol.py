@@ -33,6 +33,9 @@ class Command(IntEnum):
     TELEGRAM_ENSURE_STARTED = 11
     FILE_TRANSFER_TO_MATRIX = 12
     FILE_TRANSFER_TO_TELEGRAM = 13
+    DEDUP_CHECK_ACTION = 14
+    DEDUP_CHECK_MESSAGE = 15
+    DEDUP_UPDATE = 16
 
 
 class Response(IntEnum):
@@ -46,6 +49,8 @@ class Response(IntEnum):
     PICKLED_OK = -8
     PICKLED_ERROR = -9
     TELEGRAM_ENSURED_STARTED = -10
+    DEDUP_FOUND = -11
+    DEDUP_NOT_FOUND = -12
 
 
 # Header: request ID (int32), action code (int8), payload length (uint32)

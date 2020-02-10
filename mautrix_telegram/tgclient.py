@@ -28,7 +28,6 @@ from .mix import Command
 
 class MautrixTelegramClient(TelegramClient):
     session: Session
-    no_updates: bool = False
     in_bucket: bool
     mix: MixClient
     mxid: str
@@ -45,7 +44,7 @@ class MautrixTelegramClient(TelegramClient):
         return self._get_response_message(request, await self(request), entity)
 
     async def __call__(self, request, ordered=False):
-        if self.no_updates:
+        if not self.in_bucket:
             print(f"Proxying {request} through {self.target_bucket}")
             return await self.mix.pickled_call(Command.TELEGRAM_RPC, payload=(self.mxid, request),
                                                target=self.target_bucket)
@@ -53,6 +52,9 @@ class MautrixTelegramClient(TelegramClient):
             return await super().__call__(request, ordered)
 
     def connect(self) -> Awaitable[None]:
-        if self.no_updates:
+        if not self.in_bucket:
             raise ValueError("Can't connect() delegated client")
         return super().connect()
+
+    def is_connected(self) -> bool:
+        return not self.in_bucket or super().is_connected()

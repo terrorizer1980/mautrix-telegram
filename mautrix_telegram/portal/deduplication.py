@@ -13,9 +13,10 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, Deque, Dict, Tuple, TYPE_CHECKING
+from typing import Optional, Deque, Dict, Tuple, Any, TYPE_CHECKING
 from collections import deque
 import hashlib
+import asyncio
 
 from telethon.tl.patched import Message, MessageService
 from telethon.tl.types import (MessageMediaContact, MessageMediaDocument, MessageMediaGeo,
@@ -26,9 +27,11 @@ from mautrix.types import EventID
 
 from ..context import Context
 from ..types import TelegramID
+from ..mix import Command, Response
 
 if TYPE_CHECKING:
     from .base import BasePortal
+    from ..mix.client import MixClient
 
 DedupMXID = Tuple[EventID, TelegramID]
 
@@ -41,12 +44,14 @@ class PortalDedup:
     _dedup_mxid: Dict[str, DedupMXID]
     _dedup_action: Deque[str]
     _portal: 'BasePortal'
+    _mix: 'MixClient'
 
     def __init__(self, portal: 'BasePortal') -> None:
         self._dedup = deque()
         self._dedup_mxid = {}
         self._dedup_action = deque()
         self._portal = portal
+        self._mix = portal.mix
 
     @property
     def _always_force_hash(self) -> bool:
@@ -79,8 +84,23 @@ class PortalDedup:
                            .encode("utf-8")
                            ).hexdigest()
 
-    def check_action(self, event: TypeMessage) -> bool:
+    @staticmethod
+    def _join(*args: Any, joiner: bytes = b";") -> bytes:
+        return joiner.join(arg if isinstance(arg, bytes) else str(arg).encode("utf-8")
+                           for arg in args)
+
+    @staticmethod
+    def _bytes_to_dedup_mxid(data: bytes) -> DedupMXID:
+        mxid, tgid = data.rsplit(b":", 1)
+        return EventID(str(mxid)), TelegramID(int(tgid))
+
+    async def check_action(self, event: TypeMessage) -> bool:
         evt_hash = self._hash_event(event) if self._always_force_hash else event.id
+        if self._mix:
+            resp, _ = await self._mix.call(
+                Command.DEDUP_CHECK_ACTION, self._join(*self._portal.mxid, evt_hash),
+                expected_response=(Response.DEDUP_FOUND, Response.DEDUP_NOT_FOUND))
+            return resp == Response.DEDUP_FOUND
         if evt_hash in self._dedup_action:
             return True
 
@@ -90,10 +110,17 @@ class PortalDedup:
             self._dedup_action.popleft()
         return False
 
-    def update(self, event: TypeMessage, mxid: DedupMXID = None,
-               expected_mxid: Optional[DedupMXID] = None, force_hash: bool = False
-               ) -> Optional[DedupMXID]:
+    async def update(self, event: TypeMessage, mxid: DedupMXID = None,
+                     expected_mxid: Optional[DedupMXID] = None, force_hash: bool = False
+                     ) -> Optional[DedupMXID]:
         evt_hash = self._hash_event(event) if self._always_force_hash or force_hash else event.id
+        if self._mix:
+            resp, data = await self._mix.call(
+                Command.DEDUP_UPDATE, self._join(self._portal.mxid, evt_hash,
+                                                 self._join(*mxid, joiner=b":"),
+                                                 self._join(*expected_mxid, joiner=b":")),
+                expected_response=(Response.DEDUP_FOUND, Response.DEDUP_NOT_FOUND))
+            return self._bytes_to_dedup_mxid(data) if resp == Response.DEDUP_FOUND else None
         try:
             found_mxid = self._dedup_mxid[evt_hash]
         except KeyError:
@@ -104,11 +131,17 @@ class PortalDedup:
         self._dedup_mxid[evt_hash] = mxid
         return None
 
-    def check(self, event: TypeMessage, mxid: DedupMXID = None, force_hash: bool = False
-              ) -> Optional[DedupMXID]:
+    async def check(self, event: TypeMessage, mxid: DedupMXID = None, force_hash: bool = False
+                    ) -> Optional[DedupMXID]:
         evt_hash = (self._hash_event(event)
                     if self._always_force_hash or force_hash
                     else event.id)
+        if self._mix:
+            resp, data = await self._mix.call(
+                Command.DEDUP_CHECK_MESSAGE, self._join(self._portal.mxid, evt_hash,
+                                                        self._join(*mxid, joiner=b":")),
+                expected_response=(Response.DEDUP_FOUND, Response.DEDUP_NOT_FOUND))
+            return self._bytes_to_dedup_mxid(data) if resp == Response.DEDUP_FOUND else None
         if evt_hash in self._dedup:
             return self._dedup_mxid[evt_hash]
 
@@ -119,12 +152,14 @@ class PortalDedup:
             del self._dedup_mxid[self._dedup.popleft()]
         return None
 
-    def register_outgoing_actions(self, response: TypeUpdates) -> None:
+    async def register_outgoing_actions(self, response: TypeUpdates) -> None:
+        checks = []
         for update in response.updates:
             check_dedup = (isinstance(update, (UpdateNewMessage, UpdateNewChannelMessage))
                            and isinstance(update.message, MessageService))
             if check_dedup:
-                self.check(update.message)
+                checks.append(self.check(update.message))
+        await asyncio.gather(*checks)
 
 
 def init(context: Context) -> None:

@@ -87,7 +87,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
                 self.peer, message,
                 parse_mode=self._matrix_event_to_entities)
             space = self.tgid if self.peer_type == "channel" else self.bot.tgid
-            self.dedup.check(response, (event_id, space))
+            await self.dedup.check(response, (event_id, space))
 
     async def name_change_matrix(self, user: 'u.User', displayname: str, prev_displayname: str,
                                  event_id: EventID) -> None:
@@ -235,12 +235,12 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
                     response = await client.edit_message(self.peer, orig_msg.tgid, content,
                                                          parse_mode=self._matrix_event_to_entities,
                                                          link_preview=lp)
-                    self._add_telegram_message_to_db(event_id, space, -1, response)
+                    await self._add_telegram_message_to_db(event_id, space, -1, response)
                     return
             response = await client.send_message(self.peer, content, reply_to=reply_to,
                                                  parse_mode=self._matrix_event_to_entities,
                                                  link_preview=lp)
-            self._add_telegram_message_to_db(event_id, space, 0, response)
+            await self._add_telegram_message_to_db(event_id, space, 0, response)
 
     async def _handle_matrix_file(self, sender_id: TelegramID, event_id: EventID,
                                   space: TelegramID, client: 'MautrixTelegramClient',
@@ -305,7 +305,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
                                                    attributes=attributes)
                 response = await client.send_media(self.peer, media, reply_to=reply_to,
                                                    caption=caption, entities=entities)
-            self._add_telegram_message_to_db(event_id, space, 0, response)
+            await self._add_telegram_message_to_db(event_id, space, 0, response)
 
     async def _matrix_document_edit(self, client: 'MautrixTelegramClient',
                                     content: MessageEventContent, space: TelegramID,
@@ -315,7 +315,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
             if orig_msg:
                 response = await client.edit_message(self.peer, orig_msg.tgid,
                                                      caption, file=media)
-                self._add_telegram_message_to_db(event_id, space, -1, response)
+                await self._add_telegram_message_to_db(event_id, space, -1, response)
                 return True
         return False
 
@@ -337,12 +337,12 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
                 return
             response = await client.send_media(self.peer, media, reply_to=reply_to,
                                                caption=caption, entities=entities)
-            self._add_telegram_message_to_db(event_id, space, 0, response)
+            await self._add_telegram_message_to_db(event_id, space, 0, response)
 
-    def _add_telegram_message_to_db(self, event_id: EventID, space: TelegramID,
+    async def _add_telegram_message_to_db(self, event_id: EventID, space: TelegramID,
                                     edit_index: int, response: TypeMessage) -> None:
         self.log.debug("Handled Matrix message: %s", response)
-        self.dedup.check(response, (event_id, space), force_hash=edit_index != 0)
+        await self.dedup.check(response, (event_id, space), force_hash=edit_index != 0)
         if edit_index < 0:
             prev_edit = DBMessage.get_one_by_tgid(TelegramID(response.id), space, -1)
             edit_index = prev_edit.edit_index + 1
@@ -476,7 +476,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
         else:
             channel = await self.get_input_entity(sender)
             response = await sender.client(EditTitleRequest(channel=channel, title=title))
-        self.dedup.register_outgoing_actions(response)
+        await self.dedup.register_outgoing_actions(response)
         self.title = title
         self.save()
 
@@ -500,7 +500,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
         else:
             channel = await self.get_input_entity(sender)
             response = await sender.client(EditPhotoRequest(channel=channel, photo=photo))
-        self.dedup.register_outgoing_actions(response)
+        await self.dedup.register_outgoing_actions(response)
         for update in response.updates:
             is_photo_update = (isinstance(update, UpdateNewMessage)
                                and isinstance(update.message, MessageService)

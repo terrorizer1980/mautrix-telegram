@@ -184,7 +184,7 @@ class User(AbstractUser, BaseUser):
             self.log.exception("Exception in ensure_started")
 
     async def ensure_started(self, even_if_no_session=False) -> 'User':
-        if not self.puppet_whitelisted or self.connected or not self.in_bucket:
+        if not self.puppet_whitelisted or self.connected:
             return self
         async with self._ensure_started_lock:
             return cast(User, await super().ensure_started(even_if_no_session))

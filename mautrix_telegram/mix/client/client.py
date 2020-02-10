@@ -112,7 +112,7 @@ class MixClient:
     def call(self, cmd: Command, payload: bytes, *, proxy: Optional[int] = None,
              expected_response: Optional[Tuple[Response, ...]] = None
              ) -> Awaitable[Tuple[Response, bytes]]:
-        if proxy:
+        if proxy is not None:
             payload = struct.pack(proxy_header, proxy, cmd) + payload
             cmd = Command.PROXY
         return self._handler.call(cmd, payload, expected_response=expected_response)

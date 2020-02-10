@@ -326,7 +326,7 @@ class PortalTelegram(BasePortal, ABC):
 
             temporary_identifier = EventID(
                 f"${random.randint(1000000000000, 9999999999999)}TGBRIDGEDITEMP")
-            duplicate_found = self.dedup.check(evt, (temporary_identifier, tg_space),
+            duplicate_found = await self.dedup.check(evt, (temporary_identifier, tg_space),
                                                force_hash=True)
             if duplicate_found:
                 mxid, other_tg_space = duplicate_found
@@ -409,7 +409,7 @@ class PortalTelegram(BasePortal, ABC):
 
             temporary_identifier = EventID(
                 f"${random.randint(1000000000000, 9999999999999)}TGBRIDGETEMP")
-            duplicate_found = self.dedup.check(evt, (temporary_identifier, tg_space))
+            duplicate_found = await self.dedup.check(evt, (temporary_identifier, tg_space))
             if duplicate_found:
                 mxid, other_tg_space = duplicate_found
                 self.log.debug(f"Ignoring message {evt.id}@{tg_space} (src {source.tgid}) "
@@ -465,7 +465,8 @@ class PortalTelegram(BasePortal, ABC):
         if not event_id:
             return
 
-        prev_id = self.dedup.update(evt, (event_id, tg_space), (temporary_identifier, tg_space))
+        prev_id = await self.dedup.update(evt, (event_id, tg_space),
+                                          (temporary_identifier, tg_space))
         if prev_id:
             self.log.debug(f"Sent message {evt.id}@{tg_space} to Matrix as {event_id}. "
                            f"Temporary dedup identifier was {temporary_identifier}, "
@@ -505,7 +506,7 @@ class PortalTelegram(BasePortal, ABC):
                                      update: MessageService) -> None:
         action = update.action
         should_ignore = ((not self.mxid and not await self._create_room_on_action(source, action))
-                         or self.dedup.check_action(update))
+                         or await self.dedup.check_action(update))
         if should_ignore or not self.mxid:
             return
         if isinstance(action, MessageActionChatEditTitle):

@@ -23,7 +23,7 @@ from ruamel.yaml import YAML
 from ..protocol import Command, Response
 from ..handlers import ConnectionHandler, register_handler, HandlerReturn
 from .conns import conn_manager
-from . import locks, proxy, txn_mux
+from . import locks, proxy, dedup, txn_mux
 
 parser = argparse.ArgumentParser(description="Mixing server for multiprocess mautrix-telegram.",
                                  prog="python -m mautrix_telegram.mix.server")
