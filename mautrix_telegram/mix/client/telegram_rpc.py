@@ -17,6 +17,7 @@ from typing import Tuple, Dict, Any, Optional
 
 from telethon.tl import TLRequest, TLObject
 from telethon.tl.types import TypeInputFile
+from telethon.errors import RPCError
 
 from mautrix.types import UserID, MediaMessageEventContent, MessageType
 from mautrix.appservice import IntentAPI
@@ -42,26 +43,28 @@ def get_intent(user_id: UserID) -> IntentAPI:
     return az.intent if user_id == az.bot_mxid else az.intent.user(user_id)
 
 
-@register_handler(Command.TELEGRAM_ENSURE_STARTED)
-async def ensure_started(_, payload: bytes) -> Response:
-    user = get_user(UserID(payload[1:].decode("utf-8")))
-    even_if_no_session = bool(payload[0])
-    await user.ensure_started(even_if_no_session)
-    return Response.TELEGRAM_ENSURED_STARTED
+@register_pickled_handler(Command.TELEGRAM_ENSURE_STARTED)
+async def ensure_started(data: Tuple[UserID, bool]) -> None:
+    user_id, even_if_no_session = data
+    await get_user(user_id).ensure_started(even_if_no_session)
 
 
 @register_pickled_handler(Command.TELEGRAM_RPC)
 async def telegram_rpc(data: Tuple[UserID, TLRequest]) -> TLObject:
     user_id, request = data
-    user = get_user(user_id)
+    user = await get_user(user_id).ensure_started()
+    if not user.client:
+        raise RPCError(request, "Client not created")
     return await user.client(request)
 
 
 @register_pickled_handler(Command.FILE_TRANSFER_TO_MATRIX)
 async def rpc_transfer_file_to_matrix(data: Dict[str, Any]) -> Optional[DBTelegramFile]:
-    client = get_user(data.pop("client")).client
+    user = await get_user(data.pop("client")).ensure_started()
+    if not user.client:
+        raise RPCError(None, "Client not created")
     intent = get_intent(data.pop("intent"))
-    return await transfer_file_to_matrix(client=client, intent=intent, **data)
+    return await transfer_file_to_matrix(client=user.client, intent=intent, **data)
 
 
 @register_pickled_handler(Command.FILE_TRANSFER_TO_TELEGRAM)
@@ -69,7 +72,10 @@ async def rpc_transfer_file_to_telegram(data: Tuple[UserID, UserID, MediaMessage
                                         ) -> Tuple[TypeInputFile, int, Optional[Tuple[Any, ...]]]:
     client_mxid, intent_mxid, content, parallel_id = data
     mxc_url = content if isinstance(content, str) else content.url
-    client = get_user(client_mxid).client
+    user = await get_user(client_mxid).ensure_started()
+    if not user.client:
+        raise RPCError(None, "Client not created")
+    client = user.client
     intent = get_intent(intent_mxid)
     if parallel_id:
         handle, size = await parallel_transfer_to_telegram(client, intent, mxc_url, parallel_id)

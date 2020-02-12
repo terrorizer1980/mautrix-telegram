@@ -41,6 +41,7 @@ from . import portal as po, puppet as pu, __version__
 from .db import Message as DBMessage
 from .types import TelegramID
 from .tgclient import MautrixTelegramClient
+from .mix import Command
 
 if TYPE_CHECKING:
     from .context import Context
@@ -131,10 +132,11 @@ class AbstractUser(ABC):
         self.log.debug(f"Initializing client for {self.name}")
 
         self.session = self.session_container.new_session(self.name)
-        if config["telegram.server.enabled"]:
-            self.session.set_dc(config["telegram.server.dc"],
-                                config["telegram.server.ip"],
-                                config["telegram.server.port"])
+        if self.in_bucket:
+            if config["telegram.server.enabled"]:
+                self.session.set_dc(config["telegram.server.dc"],
+                                    config["telegram.server.ip"],
+                                    config["telegram.server.port"])
 
         if self.is_relaybot:
             base_logger = logging.getLogger("telethon.relaybot")
@@ -233,11 +235,19 @@ class AbstractUser(ABC):
             self.log.debug(f"Proxy client created for {name} to bucket{self.client.target_bucket}")
         return self
 
-    async def ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
-        if self.connected:
-            return self
-        elif not self.in_bucket:
+    async def external_ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
+        if even_if_no_session:
+            await self.client.mix.pickled_call(Command.TELEGRAM_ENSURE_STARTED,
+                                               (self.mxid, even_if_no_session),
+                                               target=self.client.target_bucket)
+        if not self.client:
             self._init_client()
+        return self
+
+    async def ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
+        if not self.in_bucket:
+            return await self.external_ensure_started(even_if_no_session)
+        elif self.connected:
             return self
         if even_if_no_session or self.session_container.has_session(self.mxid):
             self.log.debug("Starting client due to ensure_started"

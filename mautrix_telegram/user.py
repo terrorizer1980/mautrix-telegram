@@ -184,7 +184,9 @@ class User(AbstractUser, BaseUser):
             self.log.exception("Exception in ensure_started")
 
     async def ensure_started(self, even_if_no_session=False) -> 'User':
-        if not self.puppet_whitelisted or self.connected:
+        if not self.in_bucket:
+            return await self.external_ensure_started(even_if_no_session)
+        elif not self.puppet_whitelisted or self.connected:
             return self
         async with self._ensure_started_lock:
             return cast(User, await super().ensure_started(even_if_no_session))
@@ -198,6 +200,7 @@ class User(AbstractUser, BaseUser):
             self.log.debug(f"Unauthenticated user {self.name} start()ed, deleting session...")
             await self.client.disconnect()
             self.client.session.delete()
+            self.client = None
         return self
 
     async def post_login(self, info: TLUser = None, first_login: bool = False) -> None:
