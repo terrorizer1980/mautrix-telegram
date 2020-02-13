@@ -230,7 +230,8 @@ class Bot(AbstractUser):
 
     async def handle_command(self, message: Message) -> Optional[bool]:
         def reply(reply_text: str) -> Awaitable[Message]:
-            return self.client.send_message(message.chat_id, reply_text, reply_to=message.id)
+            return self.client.send_message(message.chat_id, reply_text, reply_to=message.id,
+                                            parse_mode="md")
 
         text = message.message
 

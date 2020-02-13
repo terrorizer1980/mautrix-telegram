@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, Union
 
 from telethon.tl import TLRequest, TLObject
 from telethon.tl.types import TypeInputFile
@@ -49,13 +49,25 @@ async def ensure_started(data: Tuple[UserID, bool]) -> None:
     await get_user(user_id).ensure_started(even_if_no_session)
 
 
+PythonRPC = Tuple[str, Tuple[Any, ...], Dict[str, Any]]
+
+
 @register_pickled_handler(Command.TELEGRAM_RPC)
-async def telegram_rpc(data: Tuple[UserID, TLRequest]) -> TLObject:
+async def telegram_rpc(data: Tuple[UserID, Union[PythonRPC, TLRequest]]) -> Union[Any, TLObject]:
     user_id, request = data
     user = await get_user(user_id).ensure_started()
-    if not user.client:
-        raise RPCError(request, "Client not created")
-    return await user.client(request)
+    if isinstance(request, TLRequest):
+        if not user.client:
+            raise RPCError(request, "Client not created")
+        return await user.client(request)
+    else:
+        method_name, args, kwargs = request
+        if method_name == "is_user_authorized" and not user.client:
+            # short-circuit non-logged-in clients
+            # TODO store is_connected in each bucket instead of assuming true if user is remote
+            return False
+        method = getattr(user.client, method_name)
+        return await method(*args, **kwargs)
 
 
 @register_pickled_handler(Command.FILE_TRANSFER_TO_MATRIX)

@@ -41,6 +41,7 @@ from . import portal as po, puppet as pu, __version__
 from .db import Message as DBMessage
 from .types import TelegramID
 from .tgclient import MautrixTelegramClient
+from .tgproxy import ProxyTelegramClient
 from .mix import Command
 
 if TYPE_CHECKING:
@@ -129,6 +130,13 @@ class AbstractUser(ABC):
         return connection, connection_data
 
     def _init_client(self) -> None:
+        if not self.in_bucket:
+            self.log.debug(f"Initializing proxy client for {self.name}")
+
+            mxid = "bot" if self.is_relaybot else self.mxid
+            self.client = ProxyTelegramClient(self.ctx.mix, mxid, self.ctx.bucket_for(mxid))
+            return
+
         self.log.debug(f"Initializing client for {self.name}")
 
         self.session = self.session_container.new_session(self.name)
@@ -173,16 +181,7 @@ class AbstractUser(ABC):
             loop=self.loop,
             base_logger=base_logger
         )
-        self.client.in_bucket = self.in_bucket
-        if self.in_bucket:
-            self.client.add_event_handler(self._update_catch)
-        else:
-            mxid = "bot" if self.is_relaybot else self.mxid
-            self.client._sender = None
-            self.client._init_with = None
-            self.client.target_bucket = self.ctx.bucket_for(mxid)
-            self.client.mxid = mxid
-            self.client.mix = self.ctx.mix
+        self.client.add_event_handler(self._update_catch)
 
     @abstractmethod
     async def update(self, update: TypeUpdate) -> bool:
@@ -236,12 +235,12 @@ class AbstractUser(ABC):
         return self
 
     async def external_ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
+        if not self.client:
+            self._init_client()
         if even_if_no_session:
             await self.client.mix.pickled_call(Command.TELEGRAM_ENSURE_STARTED,
                                                (self.mxid, even_if_no_session),
                                                target=self.client.target_bucket)
-        if not self.client:
-            self._init_client()
         return self
 
     async def ensure_started(self, even_if_no_session=False) -> 'AbstractUser':
@@ -256,9 +255,9 @@ class AbstractUser(ABC):
         return self
 
     async def stop(self) -> None:
-        if self.client:
+        if self.client and self.in_bucket:
             await self.client.disconnect()
-            self.client = None
+        self.client = None
 
     # region Telegram update handling
 

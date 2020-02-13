@@ -245,6 +245,10 @@ class BasePortal(ABC):
                 self.log.warning(f"Could not find entity with bot {user.tgid}. "
                                  "Failing...")
                 raise
+            elif not user.in_bucket:
+                self.log.warning(f"Could not find entity with external user {user.tgid}. "
+                                 "Failing...")
+                raise
             self.log.warning(f"Could not find entity with user {user.tgid}. "
                              "falling back to get_dialogs.")
             async for dialog in user.client.iter_dialogs():

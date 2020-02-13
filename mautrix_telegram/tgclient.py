@@ -20,18 +20,12 @@ from telethon.tl.functions.messages import SendMediaRequest
 from telethon.tl.types import (TypeInputMedia, TypeInputPeer, TypeMessageEntity, TypeMessageMedia,
                                TypePeer)
 from telethon.tl.patched import Message
-from telethon.sessions.abstract import Session
 
-from .mix.client import MixClient
-from .mix import Command
+from .formatter import matrix_event_to_entities
 
 
 class MautrixTelegramClient(TelegramClient):
-    session: Session
-    in_bucket: bool
-    mix: MixClient
-    mxid: str
-    target_bucket: int
+    in_bucket: bool = True
 
     async def send_media(self, entity: Union[TypeInputPeer, TypePeer],
                          media: Union[TypeInputMedia, TypeMessageMedia],
@@ -43,14 +37,6 @@ class MautrixTelegramClient(TelegramClient):
                                    reply_to_msg_id=reply_to)
         return self._get_response_message(request, await self(request), entity)
 
-    async def __call__(self, request, ordered=False):
-        if not self.in_bucket:
-            print(f"Proxying {request} through {self.target_bucket}")
-            return await self.mix.pickled_call(Command.TELEGRAM_RPC, payload=(self.mxid, request),
-                                               target=self.target_bucket)
-        else:
-            return await super().__call__(request, ordered)
-
     def connect(self) -> Awaitable[None]:
         if not self.in_bucket:
             raise ValueError("Can't connect() delegated client")
@@ -58,3 +44,7 @@ class MautrixTelegramClient(TelegramClient):
 
     def is_connected(self) -> bool:
         return not self.in_bucket or super().is_connected()
+
+    def send_message(self, *args, **kwargs) -> Awaitable[Message]:
+        kwargs.setdefault("parse_mode", matrix_event_to_entities)
+        return super().send_message(*args, **kwargs)

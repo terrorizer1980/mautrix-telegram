@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, List, Tuple, Callable, Pattern, Match, TYPE_CHECKING
+from typing import Optional, List, Tuple, Callable, Pattern, Match, Union, TYPE_CHECKING
 import re
 import logging
 
@@ -21,7 +21,7 @@ from telethon.tl.types import (MessageEntityMention, MessageEntityMentionName, M
                                TypeMessageEntity)
 from telethon.helpers import add_surrogate, del_surrogate
 
-from mautrix.types import RoomID, MessageEventContent
+from mautrix.types import RoomID, MessageEventContent, Format, TextMessageEventContent
 
 from ... import puppet as pu
 from ...types import TelegramID
@@ -71,6 +71,20 @@ def cut_long_message(message: str, entities: List[TypeMessageEntity]) -> ParsedM
 
 class FormatError(Exception):
     pass
+
+
+def matrix_event_to_entities(event: Union[str, MessageEventContent]
+                              ) -> Tuple[str, Optional[List[TypeMessageEntity]]]:
+    try:
+        if isinstance(event, str):
+            message, entities = matrix_to_telegram(event)
+        elif isinstance(event, TextMessageEventContent) and event.format == Format.HTML:
+            message, entities = matrix_to_telegram(event.formatted_body)
+        else:
+            message, entities = matrix_text_to_telegram(event.body)
+    except KeyError:
+        message, entities = None, None
+    return message, entities
 
 
 def matrix_to_telegram(html: str) -> ParsedMessage:

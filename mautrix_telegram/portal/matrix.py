@@ -13,12 +13,10 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Awaitable, Dict, List, Optional, Tuple, Union, Any, TYPE_CHECKING
+from typing import Awaitable, Dict, Optional, Union, Any, TYPE_CHECKING
 from html import escape as escape_html
 from string import Template
 from abc import ABC
-
-import magic
 
 from telethon.tl.functions.messages import (EditChatPhotoRequest, EditChatTitleRequest,
                                             UpdatePinnedMessageRequest, SetTypingRequest,
@@ -28,10 +26,9 @@ from telethon.errors import (ChatNotModifiedError, PhotoExtInvalidError,
                              PhotoInvalidDimensionsError, PhotoSaveFileInvalidError)
 from telethon.tl.patched import Message, MessageService
 from telethon.tl.types import (
-    DocumentAttributeFilename, DocumentAttributeImageSize, GeoPoint,
-    InputChatUploadedPhoto, MessageActionChatEditPhoto, MessageMediaGeo,
-    SendMessageCancelAction, SendMessageTypingAction, TypeInputPeer, TypeMessageEntity,
-    UpdateNewMessage, InputMediaUploadedDocument, InputMediaUploadedPhoto)
+    DocumentAttributeFilename, DocumentAttributeImageSize, GeoPoint, InputMediaUploadedDocument,
+    InputChatUploadedPhoto, MessageActionChatEditPhoto, MessageMediaGeo, InputMediaUploadedPhoto,
+    SendMessageCancelAction, SendMessageTypingAction, TypeInputPeer, UpdateNewMessage)
 
 from mautrix.types import (EventID, RoomID, UserID, ContentURI, MessageType, MessageEventContent,
                            TextMessageEventContent, MediaMessageEventContent, Format,
@@ -40,7 +37,7 @@ from mautrix.bridge import BasePortal as MautrixBasePortal
 
 from ..types import TelegramID
 from ..db import Message as DBMessage
-from ..util import sane_mimetypes, parallel_transfer_to_telegram
+from ..util import parallel_transfer_to_telegram
 from ..context import Context
 from ..mix import Command
 from .. import puppet as p, user as u, formatter, util
@@ -83,9 +80,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
             message = await self._get_state_change_message(event, user, **kwargs)
             if not message:
                 return
-            response = await self.bot.client.send_message(
-                self.peer, message,
-                parse_mode=self._matrix_event_to_entities)
+            response = await self.bot.client.send_message(self.peer, message)
             space = self.tgid if self.peer_type == "channel" else self.bot.tgid
             await self.dedup.check(response, (event_id, space))
 
@@ -210,20 +205,6 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
         elif content.msgtype == MessageType.EMOTE:
             await self._apply_emote_format(sender, content)
 
-    @staticmethod
-    def _matrix_event_to_entities(event: Union[str, MessageEventContent]
-                                  ) -> Tuple[str, Optional[List[TypeMessageEntity]]]:
-        try:
-            if isinstance(event, str):
-                message, entities = formatter.matrix_to_telegram(event)
-            elif isinstance(event, TextMessageEventContent) and event.format == Format.HTML:
-                message, entities = formatter.matrix_to_telegram(event.formatted_body)
-            else:
-                message, entities = formatter.matrix_text_to_telegram(event.body)
-        except KeyError:
-            message, entities = None, None
-        return message, entities
-
     async def _handle_matrix_text(self, sender_id: TelegramID, event_id: EventID,
                                   space: TelegramID, client: 'MautrixTelegramClient',
                                   content: TextMessageEventContent, reply_to: TelegramID) -> None:
@@ -233,12 +214,10 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
                 orig_msg = DBMessage.get_by_mxid(content.get_edit(), self.mxid, space)
                 if orig_msg:
                     response = await client.edit_message(self.peer, orig_msg.tgid, content,
-                                                         parse_mode=self._matrix_event_to_entities,
                                                          link_preview=lp)
                     await self._add_telegram_message_to_db(event_id, space, -1, response)
                     return
             response = await client.send_message(self.peer, content, reply_to=reply_to,
-                                                 parse_mode=self._matrix_event_to_entities,
                                                  link_preview=lp)
             await self._add_telegram_message_to_db(event_id, space, 0, response)
 
@@ -292,7 +271,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
             media = InputMediaUploadedDocument(file=file_handle, attributes=attributes,
                                                mime_type=mime or "application/octet-stream")
 
-        caption, entities = self._matrix_event_to_entities(caption) if caption else (None, None)
+        caption, entities = formatter.matrix_event_to_entities(caption) if caption else (None, None)
 
         async with self.send_lock(sender_id):
             if await self._matrix_document_edit(client, content, space, caption, media, event_id):
@@ -329,7 +308,7 @@ class PortalMatrix(BasePortal, MautrixBasePortal, ABC):
         except (KeyError, ValueError):
             self.log.exception("Failed to parse location")
             return None
-        caption, entities = self._matrix_event_to_entities(content)
+        caption, entities = formatter.matrix_event_to_entities(content)
         media = MessageMediaGeo(geo=GeoPoint(lat, long, access_hash=0))
 
         async with self.send_lock(sender_id):
