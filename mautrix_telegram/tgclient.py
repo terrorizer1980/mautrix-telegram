@@ -45,6 +45,10 @@ class MautrixTelegramClient(TelegramClient):
     def is_connected(self) -> bool:
         return not self.in_bucket or super().is_connected()
 
-    def send_message(self, *args, **kwargs) -> Awaitable[Message]:
+    async def send_message(self, *args, **kwargs) -> Message:
         kwargs.setdefault("parse_mode", matrix_event_to_entities)
-        return super().send_message(*args, **kwargs)
+        resp = await super().send_message(*args, **kwargs)
+        resp._client = None
+        if resp._forward:
+            resp._forward._client = None
+        return resp
