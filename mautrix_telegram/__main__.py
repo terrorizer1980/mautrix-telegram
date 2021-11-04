@@ -101,7 +101,8 @@ class TelegramBridge(Bridge):
             self.add_startup_actions(self.bot.start())
         if self.config["bridge.resend_bridge_info"]:
             self.add_startup_actions(self.resend_bridge_info())
-        self.add_startup_actions(self._loop_active_puppet_metric())
+        # Explicitly not a startup_action, as startup_actions block startup
+        # self.periodic_sync_task = self.loop.create_task(self._loop_active_puppet_metric())
 
     async def resend_bridge_info(self) -> None:
         self.config["bridge.resend_bridge_info"] = False
