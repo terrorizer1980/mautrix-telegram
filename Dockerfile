@@ -52,6 +52,7 @@ WORKDIR /opt/mautrix-telegram
 RUN apk add --virtual .build-deps \
       python3-dev \
       libffi-dev \
+      jpeg-dev zlib-dev \
       build-base \
  && sed -Ei 's/psycopg2-binary.+//' optional-requirements.txt \
  && pip3 install -r requirements.txt -r optional-requirements.txt \
