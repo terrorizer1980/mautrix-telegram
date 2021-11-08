@@ -172,6 +172,7 @@ async def transfer_file_to_matrix(client: MautrixTelegramClient, intent: IntentA
                                   is_sticker: bool = False, tgs_convert: Optional[dict] = None,
                                   filename: Optional[str] = None, encrypt: bool = False,
                                   parallel_id: Optional[int] = None) -> Optional[DBTelegramFile]:
+    return None
     location_id = _location_to_id(location)
     if not location_id:
         return None
