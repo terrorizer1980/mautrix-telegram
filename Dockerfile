@@ -47,14 +47,12 @@ RUN apk add --no-cache \
       yq
 
 COPY requirements.txt /opt/mautrix-telegram/requirements.txt
-COPY optional-requirements.txt /opt/mautrix-telegram/optional-requirements.txt
 WORKDIR /opt/mautrix-telegram
 RUN apk add --virtual .build-deps \
       python3-dev \
       libffi-dev \
       build-base \
- && sed -Ei 's/psycopg2-binary.+//' optional-requirements.txt \
- && pip3 install -r requirements.txt -r optional-requirements.txt \
+ && pip3 install -r requirements.txt \
  && apk del .build-deps
 
 COPY . /opt/mautrix-telegram
