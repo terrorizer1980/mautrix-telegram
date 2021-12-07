@@ -10,6 +10,7 @@ The Element fork includes the following changes:
  - Add metrics for Appservice's Connection Pool stats https://github.com/vector-im/mautrix-telegram/pull/22, https://github.com/vector-im/mautrix-telegram/pull/27, https://github.com/vector-im/mautrix-telegram/pull/29
  - Don't require bot startup for bridge startup https://github.com/vector-im/mautrix-telegram/pull/24
  - Add `telegram.liveness_timeout` config to change `/_matrix/mau/live` when Telegram connections are no longer being received https://github.com/vector-im/mautrix-telegram/pull/23
+ - Update Telethon to 1.24.0
 
 Some changes that appear here may get upstreamed to https://github.com/mautrix/telegram, and will be removed from
 the list when they appear in both versions.
